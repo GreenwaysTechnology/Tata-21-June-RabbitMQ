@@ -1,0 +1,821 @@
+What and Why is rabbitMQ
+
+Distributed Apps
+
+Messaging and its standards
+
+AMQP 
+
+RabbitMQ
+ Server infrastructure.
+
+Programming with RabbitMQ.
+
+-java,javascript,.net,python......
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+What is Distributed Computing?
+
+Distributed computing (or distributed processing) is the technique of linking together multiple computer servers over a network into a cluster, to share data and to coordinate processing power. Such a cluster is referred to as a “distributed system.
+
+Application components
+
+1.biz logic -----DataSource
+2.user interface
+
+Types of Distributed?
+
+
+1.Main frame
+   -Data access logic / Data sources
+   -biz logic 
+every thing kept inside one single maiframe
+
+2.thin 
+  clients - having small software which connects main frameworks
+
+
+2.client -server 
+
+  Server will hold data only -data source/database
+  Client will hold biz logic
+  
+3.Tier /layered client- server model
+
+ -single tier
+   Server will hold data only -data source/database
+   Client will hold biz logic
+ -two tier client-server
+    server will have biz logic and data
+    clients will have only user interfaces
+
+ - three tier client-server arch 
+      
+     server will have biz logic  +data sources
+     client will have biz logic - user interface  +biz logic  
+
+after 1995 : introduction web
+
+ -n tier client server arch
+
+    server is broken into multiple servers
+	
+	  -webserver
+          -app server will  have biz logic
+          -database servers will have only datasources
+          -middlewares will have brokers like rabbit mq.
+          -clients will have ui 
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+Distributed App design:
+
+1.Old Distributed App we call monolithic.
+2.new distributed app we call microservices.
+
+
+Monolith:
+
+ One App 
+    --Orders
+    --Customers
+    --Payments
+    --Inventory
+   etc......
+
+-single language -java/.net/python
+-mostly single database -oracle,db2
+-deployment - waterfall model -one go deployment
+-down time is more
+-vendor lock-in.
+
+Program communication:
+ Any app / any pl follows some patterns like object programming models
+
+if your app is built on java, objects collabrate each other.
+
+ Client-----Product----->Cart----->Order--Checkout-->Payment----|
+
+Objects can talk each other for "Exchanging Message" : Message Passing.
+
+Micro Services
+ Single App is divided into multi domain apps
+
+  -Order App
+      -it has its own database
+      -it has its own pl
+      -its has its own team
+     etc.....
+
+  -Customer App
+
+  -Inventory App
+
+
+Remote Procedure Invocation:
+.............................
+
+ if programs are running as different applications, on different runtimes
+
+ Objects on the same runtime - JVM
+
+ Objects on different jvms - Distributed object communication.
+
+Challanges:
+
+ 1. Process to Process communication - ipc
+
+ 2. Process are two machines - Network is involed
+
+ 3. Messages are passed via wire - Message passing protocals.
+
+ 4. Message Formats - BOTH Apps need to agree on same format - xml,json,protocalbuff....
+  
+IF SAME RUN TIME: JAVA
+
+ -RMI - USED for JVM TO JVM
+
+IF Different Runtime :Java to C++ : Enterprise Integration.
+
+ORB - CORBA
+
+Challanges in the RPC Based Middleware:
+
+1. Both parties need to be available at the same point of time.
+
+2. Programs are sync , communicate which leads blocking 
+
+Blocking and Non Blocking:
+
+ 1. if a thread is blocked for a long running operation,os cant reuse that thread for 
+   other operations.
+    which leads more memory useage and it takes more cpu resource.
+
+Non Blocking:
+
+    "Having limitted no threads achive higher concurrency"
+
+  lets say
+      100 req =100 thread  = blocking mode
+
+      100 req =  1 thread  =non blocking
+
+      1 thread how can handle 100 request => async programming.
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+NON Blocking and Async Implementations:
+
+1.Programming language /Framework /lib level
+    eg:javascript
+  eg:
+     NIO,Netty,Vert.x,Spring With Netty/WebFlux
+
+
+Language level communications are best , it increases speed.
+
+It has its own drawbacks.
+
+1. if caller is sending req,if callee not avaiable.
+
+2. if caller is sending message need to persisted for period of time.
+
+3. if messages are huge , i want to store only, i am  not interested process now.
+
+4. if caller is sending message, he needs ack for message delivery.
+/////////////////////////////////////////////////////////////////////////////////////////////
+				MOM
+                       Message Oriented Middlewares
+
+
+Message-oriented middleware (MOM) is software or hardware infrastructure supporting sending and receiving messages between distributed systems. MOM allows application modules to be distributed over heterogeneous platforms and reduces the complexity of developing applications that span multiple operating systems and network protocols.
+
+MOM Started in late 1990s for enterprise integration.
+
+
+### Advantages:
+Asynchronicity
+Routing
+Transformation
+
+MOM implemntations who called  "Message Brokers"
+
+Many Compaines who started building MOM Products
+
+1.TIBCO Enterprise Message Service
+2.Amazon SNS
+3.IBM MQ
+4.Microsoft MQ
+5.RabbitMQ
+
+etc...
+
+Problems among MOM products
+
+1.No standards
+
+
+# Messaging Standards:
+
+Historically, there was a lack of standards governing the use of message-oriented middleware that has caused problems. Most of the major vendors have their own implementations, each with its own application programming interface (API) and management tools.
+
+# Advanced Message Queuing Protocol :Advanced Message Queuing Protocal
+
+AMQP is the Internet Protocol for Business Messaging
+
+The Advanced Message Queuing Protocol (AMQP) is an open standard for passing business messages between applications or organizations.  
+
+It connects systems, feeds business processes with the information they need and reliably transmits onward the instructions that achieve their goals.
+
+History:
+
+AMQP was originated in 2003 by John O'Hara at JPMorgan Chase in London.
+AMQP was conceived as a co-operative open effort. 
+
+The initial design was by JPMorgan Chase from mid-2004 to mid-2006 and it contracted iMatix Corporation to develop a C broker and protocol documentation.
+
+In 2005 JPMorgan Chase approached other firms to form a working group that included Cisco Systems, IONA Technologies, iMatix, Red Hat, and Transaction Workflow Innovation Standards Team (TWIST). 
+
+In the same year JPMorgan Chase partnered with Red Hat to create Apache Qpid, initially in Java and soon after C++.
+
+Independently, RabbitMQ was developed in Erlang by Rabbit Technologies, followed later by the Microsoft and StormMQ implementations.
+
+The working group grew to 23 companies including Bank of America, Barclays, Cisco Systems, Credit Suisse, Deutsche Börse, Goldman Sachs, HCL Technologies Ltd, Progress Software, IIT Software, INETCO Systems Limited, Informatica (including 29 West), JPMorgan Chase, Microsoft Corporation, my-Channels, Novell, Red Hat, Software AG, Solace Systems, StormMQ, Tervela Inc., TWIST Process Innovations ltd, VMware (which acquired Rabbit Technologies) and WSO2.
+
+
+AMQP certified by In August 2011, the AMQP working group announced its reorganization into an OASIS member section.
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+
+Where is AMQP Protocal?
+
+The AMQP  protocol is used by Microsoft Azure Service Bus, Service Bus for Windows Server, Azure Event Hubs, Azure IoT Hub, and by numerous open source projects like Apache Qpid, Apache ActiveMQ, and Apache Apollo, as well as by commercial messaging products of other vendors like JBoss A-MQ, RedHat MRG, SwiftMQ, and IBM MQLight.
+
+
+## Key Capabilities
+
+AMQP connects across:
+
+Organizations – applications in different organizations
+Technologies – applications on different platforms
+Time – systems don’t need to be available simultaneously
+Space – reliably operate at a distance, or over poor networks
+
+
+Business Case
+
+The main reasons an enterprise will chose AMQP over proprietary alternatives are:
+
+Realize the savings commoditization brings; remove vendor lock-in
+Connect applications on different platforms; choose the right platform for the job
+Connect to business partners using a full featured open standard; remove technical barriers to trade 
+Position for innovations built upon the foundation of AMQP
+
+Key Features
+AMQP was designed with the following main characteristics as goals:
+
+Security
+Reliability
+Interoperability
+Standard
+Open
+
+Versions:
+0.8
+0.9
+0.9.1 - RabbitMQ written
+0.10
+1.0 -Latest
+////////////////////////////////////////////////////////////////////////////////////////////
+
+                                       AMQP Spec
+
+Before getting into.
+
+Any Protocal(http,tcp,smtp) , is based on specifications(ideas -how it works) - functional
+and tech req.
+
+Protocal is implemented by using programming language. every protocal is program.
+
+http is written in c, http is c program.
+
+AQMP is also spec, can be written in any language - erlang,c
+
+
+
+Protocal Architecture:
+
+
+The AMQP protocol is a binary protocol with modern features: it is multi-channel, negotiated,
+asynchronous, secure, portable, neutral, and efficient. AMQP is usefully split into two layers:
+
+
++------------------Functional Layer----------------+
+| |
+| Basic Transactions Exchanges Message queues |
+| |
++--------------------------------------------------+
++------------------Transport Layer-----------------+
+| |
+| Framing Content Data representation |
+| |
+| Error handling Heart-beating Channels |
+| |
++--------------------------------------------------+
+
+The functional layer defines a set of commands (grouped into logical classes of functionality) that do useful work on behalf of the application.
+
+The transport layer that carries these methods from application to server, and back, and which handles channel multiplexing, framing, content encoding, heart-beating, data representation, and error handling.
+
+
+General Architecture:
+
+AMQ Model Architecture
+
+
+
+what a middleware server is /Server?
+
+it is a data server that accepts messages and does two main things with them, 
+
+it routes them to different consumers depending on arbitrary criteria, and it buffers them in memory or on disk when consumers are not able to accept them fast enough
+
+
+In a pre-AMQP server these tasks are done by monolithic engines that implement specific types of routing and buffering. The AMQ model takes the approach of smaller, modular pieces that can be combined in more diverse and robust ways. It starts by dividing these tasks into two distinct roles:
+
+1. The exchange, which accepts messages from producers and routes them message queues.
+
+2. The message queue, which stores messages and forwards them to consumer applications.
+
+There is a clear interface between exchange and message queue, called a "binding".
+
+
+
+AMQP provides runtime-programmable semantics, through two main aspects:
+
+Who can create Exchange and Queues?
+
+ - At Server level by Server admins
+ - By The application Programmers
+
+
+1. The ability at runtime via the protocol to create arbitrary exchange and message queue types.
+
+2. The ability at runtime via the protocol to wire exchanges and message queues together to create any required message-processing system.
+
+
+The Message Queue:
+.................
+
+A message queue stores messages in memory or on disk, and delivers these in sequence to one or more consumer applications.
+
+
+Message queues are message storage and distribution entities. Each message queue
+is entirely independent and is a reasonably clever object..
+
+
+A message queue has various properties: private or shared, durable or temporary, client-named or servernamed, etc
+
+By selecting the desired properties we can use a message queue to implement conventional middleware entities such as:
+
+
+A shared store-and-forward queue, which holds messages and distributes these between consumers on a round-robin basis. Store and forward queues are typically durable and shared between multiple consumers.
+
+A private reply queue, which holds messages and forwards these to a single consumer.
+
+Reply queues are typically temporary, server-named, and private to one consumer.
+
+A private subscription queue, which holds messages collected from various "subscribed" sources, and forwards these to a single consumer.
+&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+                                         
+					RabbitMQ
+
+
+What is RabbitMQ?
+   RabbitMQ is the most widely deployed open source message broker.
+   RabbitMQ is refence implementation of AMQP Protocal.
+   RabbitMQ supports other messaging protocals
+     -STOMP -The Simple Text Oriented Messaging Protocol
+     -MQTT  - IOT messaging protocal.
+   RabbitMQ is written Erlang
+
+
+Erlang:
+   As a highly performant, stable, and clusterable message broker, it’s no surprise that
+RabbitMQ has found a home in such mission-critical environments as the centerpiece
+of large-scale messaging architectures.
+
+It was written in Erlang, the telco-grade, functional programming language designed at the Ericsson Computer Science Laboratory in the mid-to-late 1980s.
+
+ Erlang was designed to be a distributed, fault-tolerant, soft real-time system for applications that require 99.999% uptime.
+
+ As a language and runtime system, Erlang focuses on lightweight processes that pass messages between each other, providing a high level of concurrency with no shared state.
+
+
+Erlang’s design, which focused on concurrent processing and message passing, made
+it a natural choice for a message broker like RabbitMQ:
+
+As an application, a message broker maintains concurrent connections, routes messages, and manages their states.
+
+In addition, Erlang’s distributed communication architecture makes it a natural for
+RabbitMQ’s clustering mechanism. 
+
+Servers in a RabbitMQ cluster make use of Erlang’s
+inter-process communication (IPC) system, offloading the functionality that many competing
+message brokers have to implement to add clustering capabilities.
+
+
+RabbitMQ Low Level Architecture:
+................................
+
+ RabbitMQApp
+    |
+ Erlang VM
+
+
+RabbitMQ Application Architecture:
+
+Virtual Host or Vhost is logical representation of RabbitMQ services like Apache virtuals Hosts
+
+"The term Virtual Host refers to the practice of running more than one web site (such as company1.example.com and company2.example.com) on a single machine"
+
+RabbiMQ can run isloated services..
+
+Each Vhost is collections of  Entities/Components
+
+ 1.Connections
+ 2.Exchanges
+ 3.Queues
+ 4.Bindings
+ 5.Security Settings - Users and its permissions
+
+
+In Enterprise, We can have more than one machines/servers and each server can have more than one vhosts.
+
+Resources can be shared across vhosts like queue sharings.
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+RabbitMQ : Installation
+
+
+There are two versions of RabbitMQ
+
+1.Open source
+
+2.Enterprise - CloudAMQP -https://www.cloudamqp.com/
+
+
+RabbitMQ is highly portable , we can install any where.
+
+Linux,BSD,UNIX : Debian,Ubuntu,RHEL,CentOS,Fedora,Solaris.
+Windows : Chocolatey or installer ,binary
+
+MACOS : Homebrew 
+
+Elang/OTP for RabbitMQ
+
+Docker
+
+RabbitMQ ON kubernetes Cluster
+
+Cloud :
+  CloudAMQ
+  AWS EC2
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+Linux :
+
+setup file
+
+#!/bin/sh
+
+## If sudo is not available on the system,
+## uncomment the line below to install it
+# apt-get install -y sudo
+
+sudo apt-get update -y
+
+## Install prerequisites
+sudo apt-get install curl gnupg -y
+
+## Install RabbitMQ signing key
+curl -fsSL https://github.com/rabbitmq/signing-keys/releases/download/2.0/rabbitmq-release-signing-key.asc | sudo apt-key add -
+
+## Install apt HTTPS transport
+sudo apt-get install apt-transport-https
+
+## Add Bintray repositories that provision latest RabbitMQ and Erlang 23.x releases
+sudo tee /etc/apt/sources.list.d/bintray.rabbitmq.list <<EOF
+## Installs the latest Erlang 23.x release.
+## Change component to "erlang-22.x" to install the latest 22.x version.
+## "bionic" as distribution name should work for any later Ubuntu or Debian release.
+## See the release to distribution mapping table in RabbitMQ doc guides to learn more.
+deb https://dl.bintray.com/rabbitmq-erlang/debian bionic erlang
+## Installs latest RabbitMQ release
+deb https://dl.bintray.com/rabbitmq/debian bionic main
+EOF
+
+## Update package indices
+sudo apt-get update -y
+
+## Install rabbitmq-server and its dependencies
+sudo apt-get install rabbitmq-server -y --fix-missing
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+Afer installing , How to verify the rabbitmq server is running? How to start,stop,restart Rabbit MQ Server.
+
+
+Two ways:
+
+1.Using linux system command called "service"
+
+2.Rabbit MQ server offers lot of tools.
+
+
+Linux:
+
+ $sudo service rabbitmq-server stop 
+ $sudo service rabbitmq-server status
+ $sudo service rabbitmq-server start
+ $sudo service rabbitmq-server restart
+
+2.RabbitMQ offers lot of tools
+
+2.1.cli tools
+
+1.rabbitmqctl for service management and general operator tasks
+
+2.rabbitmq-diagnostics for diagnostics and health checking
+
+3.rabbitmq-plugins for plugin management
+
+4.rabbitmq-queues for maintenance tasks on queues, in particular quorum queues
+
+5.rabbitmq-upgrade for maintenance tasks related to upgrades
+
+2.2. Management UI Tool
+     GUI Web Interface through which you can monitor
+
+2.3. HTTP Api
+       offers REST API, which returns server information, you can get and also pass to other applications
+///////////////////////////////////////////////////////////////////////////////////////////
+
+rabbitqctl :
+  Tool for mananging Rabbit MQ nodes
+
+Syntax:
+   rabbitmqctl -options
+
+rabbitmqctl [--node <node>] [--timeout <timeout>] [--longnames] [--quiet] <command> [<command options>]
+
+rabbitmqctl [-n <node>] [-t <timeout>] [-l] [--quiet] <command> [<command options>]
+
+Every RabbitMQ Server starts with default Node Name..
+
+Name : rabbit@target-hostName
+
+How to start RabbitMQ server?
+
+1.Via System service command
+
+2.Via rabbitmq binary command
+   sudo rabbitmq-server 
+
+Mode of Server Startup :
+
+1. log mode
+
+ sudo rabbitmq-server
+
+  ##  ##      RabbitMQ 3.8.2
+  ##  ##
+  ##########  Copyright (c) 2007-2019 Pivotal Software, Inc.
+  ######  ##
+  ##########  Licensed under the MPL 1.1. Website: https://rabbitmq.com
+
+  Doc guides: https://rabbitmq.com/documentation.html
+  Support:    https://rabbitmq.com/contact.html
+  Tutorials:  https://rabbitmq.com/getstarted.html
+  Monitoring: https://rabbitmq.com/monitoring.html
+
+  Logs: /var/log/rabbitmq/rabbit@ip-172-31-3-18.log
+        /var/log/rabbitmq/rabbit@ip-172-31-3-18_upgrade.log
+
+  Config file(s): (none)
+
+  Starting broker... completed with 0 plugins.
+
+After starting : You can check status
+
+$sudo rabbitmqctl status
+
+
+2. Detached Mode
+  $ sudo rabbitmq-server -detached
+Warning: PID file not written; -detached was passed.
+
+After starting : You can check status
+
+$sudo rabbitmqctl status
+
+Shudown the server and check the status.
+
+$sudo rabbitmqctl shutdown
+
+$sudo rabbitmqctl status
+/////////////////////////////////////////////////////////////////////////////////////////////
+How to view Management Information?
+
+//////////////////////////////////////////////////////////////////////////////////////////
+
+How to install Rabbit In Windows?
+
+windows binary
+
+or 
+
+choco install rabbitmq
+.............................................................................................
+
+abbit MQ Boot Process:
+.......................
+
+$sudo rabbitmq-server start
+          |
+          loaded into main memory
+               |
+              Process(Erlang) is ready
+
+
+ Since Rabbit Mq is server , which has default port 5672.
+
+Rabbit MQ server mostly powered with configurations.
+
+
+$sudo rabbitmq-server start
+          |
+          loaded into main memory
+               |
+              Process(Erlang) is ready
+                |
+                starts reading a configuration file
+                        /etc/rabbitmq
+
+Lab : 
+1.Testing config files
+  $ls -l /etc/rabbitmq
+
+ by default there will be no files , empty
+
+
+$sudo rabbitmq-server start
+          |
+          loaded into main memory
+               |
+              Process(Erlang) is ready
+                |
+                starts reading a configuration file
+                        /etc/rabbitmq
+
+Under this folder you can have three major configuration files, which need to be created
+manually.
+
+1.rabbitmq-env.conf
+
+$sudo rabbitmq-server start
+          |
+          loaded into main memory
+               |
+              Process(Erlang) is ready
+                |
+                starts reading a configuration file
+                        /etc/rabbitmq/rabbitmq-env.conf --entry file where major 
+RabbitMQ configurations are found.
+
+ But we have seen no such file , found. then how rabbit mq works.
+
+    ->RabbitMQ has distributed default settings along with rabbitmq server.
+
+
+
+
+$cat /etc/rabbitmq/rabbitmq-env.conf
+# Defaults to rabbit. This can be useful if you want to run more than one node
+# per machine - RABBITMQ_NODENAME should be unique per erlang-node-and-machine
+# combination. See the clustering on a single machine guide for details:
+# http://www.rabbitmq.com/clustering.html#single-machine
+#NODENAME=rabbit
+
+# By default RabbitMQ will bind to all interfaces, on IPv4 and IPv6 if
+# available. Set this if you only want to bind to one network interface or#
+# address family.
+#NODE_IP_ADDRESS=127.0.0.1
+
+# Defaults to 5672.
+#NODE_PORT=5672
+
+
+The default Settings for RabbitMQ:
+
+1.Node
+   Node is logical representation machine,on which rabbitmq application are running
+2.Port
+   Node is running on default port is 5672
+3.Default log file
+   /var/log/rabbitmq
+
+Lab verify log files
+
+$ls -l /var/log/rabbitmq
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+How to run multiple rabbitmq server or  How to change rabbitmq server node name,port no from defalult settings?
+
+Condition :
+
+1.Each server should run in different port
+2.Each server must have unique name.
+
+
+Solution :  
+
+You have to supply node name and port no differntly when you start server.
+
+RabbitMQ can be configured by using three configurations
+
+1.The first way is to use the RabbitMQ environment variables that lie on the environment variables of the operating system.
+
+2.the second way is through the configuration file provided by RabbitMQ.
+   rabbitmq.conf
+
+3.the last way is to use runtime parameters
+   A special runtime parameters are supplied to rabbitmq server when server runngi
+
+
+Environment Variables:
+
+ Environment variables are supplied by RabbitMQ-Built in.
+
+Environment variables are configured 
+         1.inside rabbitmq-env.conf file : static configuration
+         2.during server startup via commandline.
+
+
+common environment variables
+*****************************
+
+RABBITMQ_NODE_IP_ADDRESS:
+	Change this if you only want to bind to one network interface. Binding to two or more interfaces can be set up in the configuration file.
+	Default: an empty string, meaning "bind to all network interfaces".
+
+RABBITMQ_NODE_PORT	
+	Default: 5672.
+
+RABBITMQ_NODENAME
+	The node name should be unique per Erlang-node-and-machine combination. To run multiple nodes, see the clustering guide.
+	Default:
+	Unix*: rabbit@$HOSTNAME
+	Windows: rabbit@%COMPUTERNAME%
+
+RABBITMQ_CONFIG_FILE
+	Main RabbitMQ config file path.
+
+RABBITMQ_ADVANCED_CONFIG_FILE
+	"Advanced" (Erlang term-based) RabbitMQ config file 
+
+RABBITMQ_CONF_ENV_FILE
+	Location of the file that contains environment variable definitions (without the RABBITMQ_ prefix).
+   default
+	Ubuntu and Debian: /etc/rabbitmq/rabbitmq-env.conf
+
+RABBITMQ_MNESIA_BASE
+	This base directory contains sub-directories for the RabbitMQ server's node database, message store and cluster state files, one for each node, unless RABBITMQ_MNESIA_DIR is set explicitly.
+
+  default:
+	Ubuntu and Debian packages: /var/lib/rabbitmq/mnesia/
+
+RABBITMQ_MNESIA_DIR
+	The directory where this RabbitMQ node's data is stored. This s a schema database, message stores, cluster member information and other persistent node state.
+
+RABBITMQ_PLUGINS_DIR
+	The list of directories where plugin archive files are located and extracted from. This is PATH-like variable, where different paths are separated by an OS-specific separator (: for Unix, ; for Windows). Plugins can be installed to any of the directories listed here. Must not contain any characters mentioned in the path restriction section.
+
+	Ubuntu and Debian packages: /var/lib/rabbitmq/plugins
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
