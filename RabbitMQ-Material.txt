@@ -640,7 +640,7 @@ or
 choco install rabbitmq
 .............................................................................................
 
-abbit MQ Boot Process:
+rabbit MQ Boot Process:
 .......................
 
 $sudo rabbitmq-server start
@@ -805,13 +805,235 @@ RABBITMQ_PLUGINS_DIR
 
 	Ubuntu and Debian packages: /var/lib/rabbitmq/plugins
 
+///////////////////////////////////////////////////////////////////////////////////////////
+
+Lab:
+
+ Server more rabbit mq servers
+
+By default rabbit mq server starts in default 
+
+$sudo rabbitmq-server 
+
+  Default node
+
+How to a new another server on the same host(server)
+
+$sudo RABBITMQ_NODE_PORT=5673 RABBIT_NODENAME=tatanode rabbitmq-server -detached
+
+How to connect rabbit mq server instance?
+
+-rabbitmqctl tool
+-app develoer
+-management
+
+rabbitmqctl [--node <node>] [--timeout <timeout>] [--longnames] [--quiet] <command> [<command options>]
+
+Steps:
+1. sudo RABBITMQ_NODE_PORT=5675 RABBITMQ_NODENAME=tatanode rabbitmq-server
+
+sudo rabbitmqctl --node tatanode status
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+Management UI:
+.............
+
+Env:
+
+ - if you are in windows, after installing, you can access managment 
+  localhost:15672
+ - default user at local host is guest, guest
+
+- if you are in linux, vm or bare , cloud
+
+Plugins:
+  Collection of utitiles , which are programs must be installed to view management dashboard
+which is simple web application.
+
+Plugins extend the rabbit mq server core functionality.
+
+Features:
+ -supports additional amqp protocal exchange types
+ -monitoring tools
+ -federation types
+
+How to enable ,disable , install plugins
+
+Syntax:
+
+rabbitmq-plugins enable <plugin-name>
+
+  
+eg:
+rabbitmq-plugins enable rabbitmq_peer_discovery_k8s
+
+
+Disabling:
+
+rabbitmq-plugins disable <plugin-name>
+rabbitmq-plugins disable rabbitmq_top
+
+$sudo rabbitmq-plugins directories -s
+
+Plugin archives directory: /usr/lib/rabbitmq/plugins:/usr/lib/rabbitmq/lib/rabbitmq_server-3.8.14/plugins
+Plugin expansion directory: /var/lib/rabbitmq/mnesia/rabbit@ip-172-31-4-201-plugins-expand
+Enabled plugins file: /etc/rabbitmq/enabled_plugins
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+Use case: How to access management dashboard.
+
+if you are in local host , you can access management console easily.
+
+Note : 
+ 1.windows , no need of installing management_plugin , which installed by default
+
+ 2.Linux , we need to install management_plugin.
+    sudo rabbitmq-plugins enable rabbitmq_management
+
+How to access?
+
+aws ec2 instance
+  http://13.233.158.60:15672/
+
+if it is local
+  http:localhost//15672
+
+Login creditionals:
+
+if it is localhost domain.
+ you can login using guest guest 
+
+if it is remote login - like cloud aws/gcp..
+
+you cant use guest user 
+
+
+I need to create use admin user.
+
+Authentication, Authorisation, Access Control
+..............................................
+
+How to create new user and offers  admin rights.
+
+steps:
+
+1. create user and password
+syntax:
+ sudo rabbitmqctl add_user userName password
+ sudo rabbitmqctl add_user  root root
+
+2. set user category-administrator
+ syntax:
+ sudo rabbitmqctl set_user_tags userName category
+ 
+$ sudo rabbitmqctl set_user_tags admin administrator
+
+To list created users;
+
+~$ sudo rabbitmqctl list_users
+Listing users ...
+user    tags
+admin   [administrator]
+guest   [administrator]
+root    [administrator]
+
+
+If you delete users:
+$rabbitmqctl delete_user 'username'
+$rabbitmqctl delete_user 'admin'
+
+
+Setting Permissions to access virtual Host:
+
+To grant permissions to a user in a virtual host, use rabbitmqctl set_permissions:
+
+sudo rabbitmqctl set_permissions -p "/" "root" ".*" ".*" ".*"
+
+
+Full steps to create users
+
+1.sudo rabbitmqctl add_user root root 
+2.sudo rabbitmqctl set_user_tags admin administrator
+3.sudo rabbitmqctl set_permissions -p "/" "root" ".*" ".*" ".*"
+
+///////////////////////////////////////////////////////////////////////////////
+
+User Tags:
+
+Comma-separated list of tags to apply to the user. Currently supported by the management plugin:
+
+-management
+	User can access the management plugin.
+
+-policymaker
+	User can access the management plugin and manage policies and parameters for the vhosts they have access to.
+
+monitoring
+	User can access the management plugin and see all connections and channels as well as node-related information.
+
+administrator
+		User can do everything monitoring can do, manage users, vhosts and permissions, close other user's connections, and manage policies and parameters for all vhosts.
+///////////////////////////////////////////////////////////////////////////////////////////
+
+Virtual Hosts:
+.............
+
+Virtual Host is management web application.
+Which consits of Connections,Exchanges,Queues,Users and permissions.
+
+Virtual Hosts are similar to another virtual hosts present in web containers like apache, nginx.
+
+How to virtual hosts in RabbitMQ can be created and deleted using 
+
+->rabbitmqctl cli tool
+->via HTTP rest apis
+
+Logical and Physical Separation:
+.................................
+
+-Vhosts never separte RabbitMQ server physically.
+ means that many vhosts can run on single erlang process(server) process.
+
+Client Connections And Vhosts:
+...............................
+A virtual host has a name. When an AMQP 0-9-1 client connects to RabbitMQ, it specifies a vhost name to connect to. 
+
+If authentication succeeds and the username provided was granted permissions to the vhost, connection is established
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+How to create Vhosts?
+
+-via http api
+-via rabbitmqctl tool
+-via management dashboard tool.
 
 
 
+CLI:
 
+Adding new Vhost
 
+$ sudo rabbitmqctl add_vhost product
+Adding vhost "product" ...
 
+Delete existing Vhost
 
+$sudo rabbitmqctl delete_vhost product
+Deleting vhost "product" ...
+ubuntu@ip-172-31-4-201:~$
+
+How to limit max client connections and max queues?
+
+Client connections at  a time:
+
+$rabbitmqctl set_vhost_limits -p vhost_name '{"max-connections": 256}'
+
+How many queues we can create
+
+$rabbitmqctl set_vhost_limits -p vhost_name '{"max-queues": 1024}'
 
 
 
