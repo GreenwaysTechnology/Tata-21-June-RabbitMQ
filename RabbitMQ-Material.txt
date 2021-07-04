@@ -1035,7 +1035,1095 @@ How many queues we can create
 
 $rabbitmqctl set_vhost_limits -p vhost_name '{"max-queues": 1024}'
 
+////////////////////////////////////////////////////////////////////////////////////////////
+                                     RabbitMQ Programming
+............................................................................................
 
+RabbitMQ is just middleware, can be connected with any programming language.
+
+Java,C#,Python,Ruby,Node.js(javascript),Go,Swift....
+
+
+Program Types:
+
+1.Producer 
+2.Consumer
+
+Components:
+
+1.Exchange
+
+2.Queue
+
+How clients are conntected with RabbitMQ Server?
+
+As Per AQMP Protocal specification.
+
+Clients(Producer && Consumer) talks to RabbitMQ Server via "TCP" Protocal.
+
+Clients establish TCP connection with RabbitMQ Server.
+
+Work Flow:
+
+1.Client tries to connect server by sending TCP header
+2.Server returns All Protocal messages
+3.Client sends authentication info like username and password
+4.Server responds auth success/failure
+5.If success, Then select vhost
+6.Once VHost ready, then it is ready to send or receive messages
+
+According to this spec, Client Libs must Provide , Connection Implementation.
+
+
+Channel:
+ -It is Virtual Connection between your application and TCP
+
+
+
+ jdbc:oracle:thin:Tcp/Ip:@localhost:1521:xe","system","oracle"
+  |     |      |
+protocal        subprotocal
+       subprotocal
+
+jdbc is universal protocal developed by sun micro system to talk to any datasources.
+
+oracle -orcl
+..............................................................................................
+
+Programming : Java : amqp client.
+
+Steps:
+
+1.Create Maven Project
+pom.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.example</groupId>
+    <artifactId>RabbitMQJavaClientApp</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.rabbitmq</groupId>
+            <artifactId>amqp-client</artifactId>
+            <version>5.7.1</version>
+        </dependency>
+    </dependencies>
+</project>
+/////////////////////////////////////////////////////////////////////////////////////////
+
+Step 2:
+
+Establish Connection with RabbitMQ Server.
+
+-ConnectionFactory:
+
+com.rabbitmq.client.ConnectionFactory 
+   -Convenience "factory" class to facilitate opening a Connection to an AMQP broker.
+
+ ConnectionFactory factory = new ConnectionFactory();
+ factory.setHost(hostName);
+ factory.setPort(portNumber);
+ factory.setVirtualHost(virtualHost);
+ factory.setUsername(username);
+ factory.setPassword(password);
+ Connection conn = factory.newConnection();
+
+
+ConnectionTest.java
+
+package com.tata.amqp.basic;
+
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class ConnectionTest {
+    public static void main(String[] args) {
+       ConnectionFactory connectionFactory = new ConnectionFactory();
+       //set connection parameters
+        connectionFactory.setHost("localhost");
+        connectionFactory.setPort(5672);
+        connectionFactory.setUsername("guest");
+        connectionFactory.setPassword("guest");
+        connectionFactory.setVirtualHost("/");
+        //connection
+        try {
+            Connection connection = connectionFactory.newConnection();
+            System.out.println("Connection Established");
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+Send Message,Consume The Message:
+
+
+Publisher ---------->Exchange------->Queue------>Consumer
+
+Note: 
+The publisher need to use explicit exchange, we dont need to create any exchange, we can
+send message. 
+RabbitMQ uses a default Exchange to send Message to the Queue.
+
+
+In order to publish message:
+
+-Exchange may be there - inside rabbitmq server -named Exchange.
+-Queue must be there
+    Queue can be created via client program - PUblisher
+    Queue can be created inside RabbitMQ Server and use it.
+
+
+How to create a Queue from java?
+
+Using channel Object
+
+channel.queueDeclare​(String queue, boolean durable, boolean exclusive, boolean autoDelete, Map<String,​Object> arguments)
+
+
+package com.tata.amqp.basic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+
+import java.io.IOException;
+
+public class Producer {
+    private static final String QUEUE_NAME = "hello";
+
+    public static void main(String[] args) {
+
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+
+            Channel channel = connection.createChannel();
+            //create queue
+            channel.queueDeclare(QUEUE_NAME, false, false, false, null);
+            System.out.println(QUEUE_NAME + "Created ");
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+
+
+How to publish a message into created Queue?
+
+basicPublish​(String exchange, String routingKey, boolean mandatory, boolean immediate, AMQP.BasicProperties props, byte[] body)
+
+
+package com.tata.amqp.basic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+
+import java.io.IOException;
+
+public class Producer {
+    private static final String QUEUE_NAME = "hello";
+
+    public static void main(String[] args) {
+
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+
+            Channel channel = connection.createChannel();
+            //create queue
+            channel.queueDeclare(QUEUE_NAME, false, false, false, null);
+            System.out.println(QUEUE_NAME + "Created ");
+
+            //Publish Message
+            String message = "Hello RabbitMQ";
+            channel.basicPublish("",QUEUE_NAME,null,message.getBytes());
+            System.out.println(" Sent " + message + " ");
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+Consuming:
+
+ Consumers are listeners, who listens for messages from the RabbitMQ.
+ Consumer has to run like demon process.
+
+ Messages May be published any time into Queue.
+
+Context:
+
+  1.Consumer may run as long process to wait for incoming messages
+  2.Consumer when every start , who can read messages.
+
+The message Processing is "Async" : Event Driven Programming.
+
+How to implment async pattern to read messages in java?
+
+ "Callback" Pattern.
+
+RabbitMQ offers
+
+com.rabbitmq.client
+
+Interface DeliverCallback
+
+Functional Interface:
+
+This is a functional interface and can therefore be used as the assignment target for a lambda expression or method reference.
+
+
+package com.tata.amqp.basic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.rabbitmq.client.Delivery;
+
+import java.io.IOException;
+
+public class Consumer {
+    private static final String QUEUE_NAME = "hello";
+
+    public static void main(String[] args) {
+        //Same COnnection Information
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        //Channel
+        try {
+            Channel channel = connection.createChannel();
+            //Get The Queue From where you want to Consume
+            //IF the Queue does not exit it will create, other wise it will try to use existing queue
+            channel.queueDeclare(QUEUE_NAME, false, false, false, null);
+            System.out.println("App is Waiting for Messages.. To exit press CTRL + C");
+            //Lambda /Callback Function to read message:
+            DeliverCallback callback = (String consumerTag, Delivery delivery) -> {
+                //read message
+                System.out.println("Message is Available");
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message : " + message);
+            };
+            //Consume : Syntax - 1 : declaring callback function separely and consume it
+//            channel.basicConsume(QUEUE_NAME, true, callback, consumerTag -> {
+//            });
+
+
+            channel.basicConsume(QUEUE_NAME, true, (consumerTag, delivery) -> {
+                //read message
+                System.out.println("Message is Available");
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message : " + message);
+            }, consumerTag -> {
+            });
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+How to test , sending interactive messages to Consumers?
+
+start two cmd ; publisher and another for consumer
+
+java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.Producer "hey"
+
+java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.Consumer
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+App is Waiting for Messages.. To exit press CTRL + C
+Message is Available
+Got Message : hey
+.............................................................................................			 How to process Complex Messages with help of multiple Consumers
+
+
+The previous use was how to send message from single Producer to Single Consumer.
+
+Single Producer, Where mutiple Consumers.
+
+  if one consumer is busy, then we cant send message to the same consumer again.We need to send a message to another consumer.
+
+
+The way delivery message from producer to multiple consumers one by one called as "Task Queue"
+
+What is Task Queue/Worker Queue?
+
+ if consumer is doing resource insentive task such as image compression,video processing,pdf
+creations,preparing large json reports etc.... after getting message(what to do-Task)
+
+Producer has sent a message called "imageCompression" to RabbitMQ server , Where Consumer reads that message and accordingly starts task.. 
+
+RabbitMQ server can push message to the COnsumer after completing long process, which makes queue will be full.
+
+in order to avoid queue full , we can tell rabbit to distribute messages to multiple consumers.
+  -Message can be distributed to many consumers 
+
+How message to distribute 
+   using Round Robin Dispatching algorthim.
+
+How it works?
+ if one message is delivered to one consumer,
+ The next message will not be delivered to The consumer, rather which will be delivered to the consumer only
+
+     m1--------------c1
+     m2---------------c2
+     
+Round Robin:
+...........
+
+By default,RabbitMQ will send each message to  the single consumer, where consumer is too busy 
+for accepting new message.
+
+
+RabbitMQ can distribute messages to many consumers in round robin fashion.
+
+How to implement Round Robin ?
+
+ By default RabbitMQ server does not know to how to distribute messages to the consumers parallely.
+
+channel.basicQos(prefetchCount) 
+
+channel.basicQos(1)
+   This tell rabbitmq not to give more than one message to a worker at a time.
+
+How rabbitMQ server again can send messages to the worker (consumer) again?
+  
+   The worker Process replies with "ack"
+ 
+
+Ack:
+public abstract String basicConsume(String queue,
+                                    boolean autoAck,
+                                    com.rabbitmq.client.DeliverCallback deliverCallback,
+                                    com.rabbitmq.client.CancelCallback cancelCallback)
+queue – the name of the queue
+autoAck – true if the server should consider messages acknowledged once delivered; false if the server should expect explicit acknowledgements
+deliverCallback – callback when a message is delivered
+cancelCallback – callback when the consumer is cancelled
+
+
+Full Worker:
+
+package com.tata.amqp.basic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+
+
+public class Worker {
+
+    private static final String TASK_QUEUE_NAME = "task_queue";
+
+
+    public static void main(String[] argv) throws Exception {
+        final Connection connection = RabbitMQConnectionUtil.getConnection();
+        //channel
+        final Channel channel = connection.createChannel();
+
+        channel.queueDeclare(TASK_QUEUE_NAME, true, false, false, null);
+
+        System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
+        //Implement Round Robin here
+        channel.basicQos(1);
+
+        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+            String message = new String(delivery.getBody(), "UTF-8");
+
+            System.out.println(" [x] Received '" + message + "'");
+            try {
+                doWork(message);
+            } finally {
+                System.out.println(" [x] Done");
+                //here send ack to rabbitmq server , so that rabbitmq server will re send fresh messages
+                channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+            }
+        };
+        channel.basicConsume(TASK_QUEUE_NAME, false, deliverCallback, consumerTag -> { });
+    }
+
+    private static void doWork(String task) {
+        for (char ch : task.toCharArray()) {
+            if (ch == '.') {
+                try {
+                    //fake delay in process.
+                    Thread.sleep(1000);
+                } catch (InterruptedException _ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+    }
+}
+//////////////////////////////////////////////////////////////////////////////////////////
+
+Producer Best Practices:
+
+-Producer connection,channel must be closed , so that messages will be reached to RabbitMq
+-More connection which leaks memory.
+
+
+How to close Connection and Channel?
+
+At of the code
+
+ try{
+   Connection
+   Channel
+ }
+ catch(){
+
+ }
+ finally {
+   channel.close()
+   connection.close()
+ }
+
+Way -2
+
+try-with-resources — introduced in Java 7 — allows us to declare resources to be used in a try block with the assurance that the resources will be closed after the execution of that block.
+
+try (PrintWriter writer = new PrintWriter(new File("test.txt"))) {
+    writer.println("Hello World");
+}
+
+
+package com.tata.amqp.basic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.MessageProperties;
+
+public class NewTask {
+
+    private static final String TASK_QUEUE_NAME = "task_queue";
+
+    public static void main(String[] argv) throws Exception {
+
+        try (Connection connection = RabbitMQConnectionUtil.getConnection();
+             Channel channel = connection.createChannel()) {
+            channel.queueDeclare(TASK_QUEUE_NAME, true, false, false, null);
+
+            String message = String.join(" ", argv);
+
+            channel.basicPublish("", TASK_QUEUE_NAME,
+                    MessageProperties.PERSISTENT_TEXT_PLAIN,
+                    message.getBytes("UTF-8"));
+            System.out.println(" [x] Sent '" + message + "'");
+        }
+    }
+
+}
+
+///////////////////////////////////////////
+
+How to Test?
+
+Open three cmd 
+
+two for consumers and one for producer
+
+
+
+//Producer
+
+C:\>java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.NewTask  First Message.
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+ [x] Sent 'First Message.'
+
+C:\>java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.NewTask  Second Message..
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+ [x] Sent 'Second Message..'
+
+C:\>java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.NewTask  Third Message...
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+ [x] Sent 'Third Message...'
+
+C:\>java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.NewTask  Fourth Message....
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+ [x] Sent 'Fourth Message....'
+
+
+
+
+Consumer:
+
+C:\>java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.Worker
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+ [*] Waiting for messages. To exit press CTRL+C
+ [x] Received 'First Message.'
+ [x] Done
+ [x] Received 'Third Message...'
+ [x] Done
+
+
+C:\>java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.basic.Worker
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+ [*] Waiting for messages. To exit press CTRL+C
+ [x] Received 'Second Message..'
+ [x] Done
+ [x] Received 'Fourth Message....'
+ [x] Done
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+              				Exchanges
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+-What is Exchange
+-How to bind(connect) Exchange and Queue
+     -Bindings : connector for exchange Queue
+     -Routing Rules to select A particular queue
+-How to connect/bind Producer and Exchange
+     -RoutingKeys
+-Types of Exchanges
+
+
+What is Exchange?
+
+ Exchange is a bridge between Producer Application and Queue.
+
+ Exchange takes a message from the Producer application and routes it into 0...more queues.
+
+Types OF exchanges
+
+-Direct 
+-Fanout
+-Topic
+-Headers
+
+Any of type exchange can forward message to Queues
+
+RabbitMQ Provides built in exchanges:
+
+""          -AMQP Default Exchange   --- Direct
+amq.direct  ---Direct
+amq.fanout  --Fanout
+amq.headers  -headers
+amq.match    -headers
+amq.topic   - topic 
+
+Direct Exchange:
+
+-A Direct Exchange is an exchange which routes messages to queues based on message routing key.
+
+Keys:
+-RoutingKey
+-BindingKey
+
+RoutingKey:
+
+-The routingKey is a message attribute.
+
+Message Attribute:
+  Meta information sent to Exchange along with message(payload)
+
+eg:
+  if you send a message from browser/MobileApp/anyHttpClient App to webserver via http protocal.
+  message sent  with many message properties(headers in http)
+eg:
+   accept:application/xml
+   Authorization:admin
+
+-The routingKey is added by the producer when message is sent 
+
+.....................................................................................
+
+How Exchange delivers Message to a Queue?
+
+Generally a relationship is established by Exchange with Queues(1...many)
+
+BindingKey:
+
+ -Key used by Exchange to Route Messages to apporapriate Queues.
+
+After receiving a message, exchange try to match the routing key with binding key of all the queues bound to it.
+it routes messages the queue whose binding key is matched and if the match is not found, it ignored the message.
+///////////////////////////////////////////////////////////////////////////////////////////
+
+Direct Exchange Code:
+
+1.Common code
+
+package com.tata.amqp.basic;
+
+public enum ExchangeType {
+
+    DIRECT("direct"),
+    TOPIC("topic"),
+    FANOUT("fanout"),
+    HEADER("headers");
+
+    private final String exchangeName;
+
+    ExchangeType(String exchangeName) {
+        this.exchangeName = exchangeName;
+    }
+
+    public String getExchangeName() {
+        return this.exchangeName;
+    }
+
+}
+
+2.Connection Code
+
+package com.tata.amqp.basic;
+
+
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class RabbitMQConnectionUtil {
+    public static Connection getConnection() {
+        ConnectionFactory connectionFactory = new ConnectionFactory();
+        //set connection parameters
+        connectionFactory.setHost("localhost");
+        connectionFactory.setPort(5672);
+        connectionFactory.setUsername("guest");
+        connectionFactory.setPassword("guest");
+        connectionFactory.setVirtualHost("/");
+        //connection
+        Connection connection = null;
+        try {
+            connection = connectionFactory.newConnection();
+           // System.out.println("Connection Established");
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+        return connection;
+    }
+}
+
+
+Exchange and Queue Creation:
+
+package com.tata.amqp.exchange.direct;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+public class DirectExchange {
+    //EXCHNAGE Name
+    public static String EXCHANGE_NAME = "direct-exchange";
+    //Queues
+    public static String QUEUE_NAME_1 = "direct-queue-1";
+    public static String QUEUE_NAME_2 = "direct-queue-2";
+    public static String QUEUE_NAME_3 = "direct-queue-3";
+
+    //Routing Keys
+    public static String ROUTING_KEY_1 = "direct-key-1";
+    public static String ROUTING_KEY_2 = "direct-key-2";
+    public static String ROUTING_KEY_3 = "direct-key-3";
+
+    public void createExchangeQueue() {
+        try {
+            Connection connection = RabbitMQConnectionUtil.getConnection();
+            Channel channel = connection.createChannel();
+            //Create Exchange
+            channel.exchangeDeclare(EXCHANGE_NAME, ExchangeType.DIRECT.getExchangeName(), true);
+
+            //Queue Creations
+            //First Queue
+            channel.queueDeclare(QUEUE_NAME_1,true,false,false,null);
+            //Bind Queue and Exchange
+            channel.queueBind(QUEUE_NAME_1,EXCHANGE_NAME,ROUTING_KEY_1);
+
+            //Second Qeueue
+            channel.queueDeclare(QUEUE_NAME_2,true,false,false,null);
+            channel.queueBind(QUEUE_NAME_2,EXCHANGE_NAME,ROUTING_KEY_2);
+
+            //Third Qeueue
+            channel.queueDeclare(QUEUE_NAME_3,true,false,false,null);
+            channel.queueBind(QUEUE_NAME_3,EXCHANGE_NAME,ROUTING_KEY_3);
+
+            channel.close();
+            connection.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+
+        }
+    }
+
+
+}
+
+Publishing Message to Exchange
+
+package com.tata.amqp.exchange.direct;
+
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class Producer {
+    private final static String MESSAGE_1 = "First Direct Message";
+    private final static String MESSAGE_2 = "Second Direct Message";
+    private final static String MESSAGE_3 = "Third Direct Message";
+
+    public void publish() {
+        try {
+            Connection connection = RabbitMQConnectionUtil.getConnection();
+            Channel channel = connection.createChannel();
+            //Publish message into Exchange with right Routing Key.
+            channel.basicPublish(DirectExchange.EXCHANGE_NAME, DirectExchange.ROUTING_KEY_1, null, MESSAGE_1.getBytes());
+            System.out.println("Message Published " + MESSAGE_1);
+
+            channel.basicPublish(DirectExchange.EXCHANGE_NAME, DirectExchange.ROUTING_KEY_2, null, MESSAGE_2.getBytes());
+            System.out.println("Message Published " + MESSAGE_2);
+
+            channel.basicPublish(DirectExchange.EXCHANGE_NAME, DirectExchange.ROUTING_KEY_3, null, MESSAGE_3.getBytes());
+            System.out.println("Message Published " + MESSAGE_3);
+
+            channel.basicPublish(DirectExchange.EXCHANGE_NAME, DirectExchange.ROUTING_KEY_3, null, "Message New".getBytes());
+            System.out.println("Message Published " + "Message New");
+
+            channel.close();
+            connection.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+
+}
+
+///
+Consumer Code:
+package com.tata.amqp.exchange.direct;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.rabbitmq.client.Delivery;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class Consumer {
+    public void receive() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            //Callback for reading from Queue -1
+            DeliverCallback consumer1 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue - 1 : " + message);
+            };
+            channel.basicConsume(DirectExchange.QUEUE_NAME_1,true,consumer1,consumerTag -> {});
+
+            //Callback for reading from Queue -2
+            DeliverCallback consumer2 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue - 2 : " + message);
+            };
+            channel.basicConsume(DirectExchange.QUEUE_NAME_2,true,consumer2,consumerTag -> {});
+
+            //Callback for reading from Queue -3
+            DeliverCallback consumer3 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue - 3 : " + message);
+            };
+            channel.basicConsume(DirectExchange.QUEUE_NAME_3,true,consumer3,consumerTag -> {});
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+Main App:
+
+package com.tata.amqp.exchange.direct;
+
+public class MainDirectApp {
+    public static void main(String[] args) throws InterruptedException {
+        //Create Exchange,Queues,Bindings will be ready
+        DirectExchange directExchange = new DirectExchange();
+        //Publish
+        Producer producer = new Producer();
+        producer.publish();
+
+        //Consumer to read
+        Consumer consumer = new Consumer();
+        consumer.receive();
+
+        Thread.sleep(1000);
+
+
+    }
+}
+..............................................................................................					  Fanout Exchange
+			     (Publisher and Subscriber)
+                   Sending messages to many Subscribers/consumers at once
+..............................................................................................
+
+-A Fanout exchange is an exchange which routes messages the received message to all the queues
+bound it.
+
+-When the producer sends the message to fanout exchange, it copies the message and routes to all the queues that are bound to it.
+
+-It just ignores the routing key or any pattern matching provided by the producer.
+
+-It is really very usefull if you want to store messages in one or more queues.
+
+
+Code:
+
+1.Common Code : Please Refer the above Program
+
+2.Exchange and Queue Creation.
+
+package com.tata.amqp.exchange.fanout;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+
+public class FanoutExchange {
+    //EXCHNAGE Name
+    public static String EXCHANGE_NAME = "fanout-exchange";
+    //Queues
+    public static String QUEUE_NAME_1 = "fanout-queue-1";
+    public static String QUEUE_NAME_2 = "fanout-queue-2";
+    public static String QUEUE_NAME_3 = "fanout-queue-3";
+
+    public static String ROUTING_KEY = "";
+
+    public void createExchangeAndQueue() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            //Create Exchange
+            channel.exchangeDeclare(EXCHANGE_NAME, ExchangeType.FANOUT.getExchangeName(), true);
+
+            //First Queue
+            channel.queueDeclare(QUEUE_NAME_1, true, false, false, null);
+            //Binding
+            channel.queueBind(QUEUE_NAME_1, EXCHANGE_NAME, ROUTING_KEY);
+            //Second Queue
+            channel.queueDeclare(QUEUE_NAME_2, true, false, false, null);
+            //binding
+            channel.queueBind(QUEUE_NAME_2, EXCHANGE_NAME, ROUTING_KEY);
+
+            //Third Queue
+            channel.queueDeclare(QUEUE_NAME_3, true, false, false, null);
+            // binding
+            channel.queueBind(QUEUE_NAME_3, EXCHANGE_NAME, ROUTING_KEY);
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+2.Producer
+
+package com.tata.amqp.exchange.fanout;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class Producer {
+    private static final String MESSAGE = "Happy News, Our Company got Ranked 1st  Position";
+
+    public void publish() {
+        try {
+            Connection connection = RabbitMQConnectionUtil.getConnection();
+            Channel channel = connection.createChannel();
+            channel.basicPublish(FanoutExchange.EXCHANGE_NAME, FanoutExchange.ROUTING_KEY, null, MESSAGE.getBytes());
+            System.out.println("Message Published " + MESSAGE);
+            channel.close();
+            connection.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+3.Consumer
+package com.tata.amqp.exchange.fanout;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.rabbitmq.client.Delivery;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+import com.tata.amqp.exchange.direct.DirectExchange;
+
+import java.io.IOException;
+
+public class Consumer {
+    public void receive() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            //Callback for reading from Queue -1
+            DeliverCallback consumer1 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From" + FanoutExchange.QUEUE_NAME_1 + message);
+            };
+            channel.basicConsume(FanoutExchange.QUEUE_NAME_1,true,consumer1, consumerTag -> {});
+
+            //Callback for reading from Queue -2
+            DeliverCallback consumer2 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From" + FanoutExchange.QUEUE_NAME_2 + message);
+            };
+            channel.basicConsume(FanoutExchange.QUEUE_NAME_2,true,consumer2, consumerTag -> {});
+
+            //Callback for reading from Queue -3
+            DeliverCallback consumer3 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From" + FanoutExchange.QUEUE_NAME_3 + message);
+            };
+            channel.basicConsume(FanoutExchange.QUEUE_NAME_3,true,consumer3, consumerTag -> {});
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+4.Main
+package com.tata.amqp.exchange.fanout;
+
+public class MainFanout {
+    public static void main(String[] args) throws InterruptedException {
+        //Create Exchange,Queues,Bindings will be ready
+        FanoutExchange fanoutExchange = new FanoutExchange();
+        //Publish
+        Producer producer = new Producer();
+        producer.publish();
+
+        Consumer consumer = new Consumer();
+        consumer.receive();
+
+        Thread.sleep(1000);
+
+
+    }
+}
+..............................................................................................
+
+
+..............................................................................................
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+				
 
 
 
