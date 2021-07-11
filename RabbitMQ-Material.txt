@@ -2073,8 +2073,1186 @@ public class MainFanout {
 }
 ..............................................................................................
 
-
+				Topic Exchange
 ..............................................................................................
+
+What is Topic Exchange?
+
+ A topic exchange is an exchange which routes messages to queues based on the wild card 
+match between routing key and routing pattern specified during the binding of the queue.
+
+Exchange after receiving message, exchange try to match the "routing key with binding routing pattern" of all the queue bound to it.
+
+
+Routing Patterns:
+  -Routing patterns are wild cards
+
+ *  
+  -> It is used to match a word at a specific position in the routing key
+ for eg routing key is
+  "asia.india" will match to the routing keys where the first word is asia and the second word is india like "asia.india.delhi" or "asia.india.mumbai" etc...
+
+ 
+ #
+ -it is used to match zero or more words, for example a routing pattern of 
+
+  "asia.india#" will match to the routing keys that begin with "asia.india" "asia.china"
+
+...........................................................................................
+
+Topic Exhange
+
+Steps :
+
+1.Utitlity code please refere previous programms
+
+2.Exchange Creation
+package com.tata.amqp.exchange.topic;
+
+import com.rabbitmq.client.BuiltinExchangeType;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class TopicExchange {
+
+    //Exchange
+    public static final String EXCHANGE_NAME = "topic-exchange";
+
+    //Queue
+    public static final String QUEUE_NAME_1 = "topic-queue-1";
+    public static final String QUEUE_NAME_2 = "topic-queue-2";
+    public static final String QUEUE_NAME_3 = "topic-queue-3";
+
+    //Routing Patterns and  Keys
+    public static String ROUTING_PATTERN_1 = "asia.china.*";
+    public static String ROUTING_PATTERN_2 = "asia.china.#";
+    public static String ROUTING_PATTERN_3 = "asia.*.*";
+
+    //keys
+    public static String ROUTING_KEY_1 = "asia.china.nanjing";
+    public static String ROUTING_KEY_2 = "asia.china";
+    public static String ROUTING_KEY_3 = "asia.china.beijing";
+    public static String ROUTING_KEY_4 = "asia.india.mumbai";
+
+    public void createExchangeAndQueue(){
+
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+
+            //Exchange
+            channel.exchangeDeclare(EXCHANGE_NAME, ExchangeType.TOPIC.getExchangeName(),true);
+
+            //First Queue
+            channel.queueDeclare(QUEUE_NAME_1,true,false,false,null);
+            channel.queueBind(QUEUE_NAME_1,EXCHANGE_NAME,ROUTING_PATTERN_1);
+
+            //Second Queue
+            channel.queueDeclare(QUEUE_NAME_2,true,false,false,null);
+            channel.queueBind(QUEUE_NAME_2,EXCHANGE_NAME,ROUTING_PATTERN_2);
+
+            //Third Queue
+            channel.queueDeclare(QUEUE_NAME_3,true,false,false,null);
+            channel.queueBind(QUEUE_NAME_3,EXCHANGE_NAME,ROUTING_PATTERN_3);
+
+
+
+            channel.close();
+            connection.close();
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+
+
+}
+
+2.Publisher
+
+package com.tata.amqp.exchange.topic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class Publisher {
+
+    //Messages
+    private final static String MESSAGE_1 = "FIRST topic message";
+    private final static String MESSAGE_2 = "SECOND topic message";
+    private final static String MESSAGE_3 = "THIRD topic message";
+    public void publish() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+
+            //publish message:
+            channel.basicPublish(TopicExchange.EXCHANGE_NAME,TopicExchange.ROUTING_KEY_1,null,MESSAGE_1.getBytes());
+            System.out.println("Message Sent " + MESSAGE_1 );
+
+            channel.basicPublish(TopicExchange.EXCHANGE_NAME,TopicExchange.ROUTING_KEY_2,null,MESSAGE_2.getBytes());
+            System.out.println("Message Sent " + MESSAGE_2 );
+
+            channel.basicPublish(TopicExchange.EXCHANGE_NAME,TopicExchange.ROUTING_KEY_3,null,MESSAGE_3.getBytes());
+            System.out.println("Message Sent " + MESSAGE_3 );
+
+            channel.basicPublish(TopicExchange.EXCHANGE_NAME,TopicExchange.ROUTING_KEY_4,null,"India -Mumbai".getBytes());
+            System.out.println("Message Sent " + "India-Mumbai" );
+
+            channel.basicPublish(TopicExchange.EXCHANGE_NAME,TopicExchange.ROUTING_KEY_4,null,"Singapore".getBytes());
+            System.out.println("Message Sent " + "Singapore" );
+
+            channel.close();
+            connection.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+3.Consumer
+package com.tata.amqp.exchange.topic;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.rabbitmq.client.Delivery;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+import com.tata.amqp.exchange.fanout.FanoutExchange;
+
+import java.io.IOException;
+
+public class Consumer {
+    public void receive() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            DeliverCallback consumer1 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue 1 " + message);
+            };
+            channel.basicConsume(TopicExchange.QUEUE_NAME_1,true,consumer1,consumerTag -> {});
+
+            DeliverCallback consumer2 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue 2 " + message);
+            };
+            channel.basicConsume(TopicExchange.QUEUE_NAME_2,true,consumer2,consumerTag -> {});
+
+            DeliverCallback consumer3 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue 3" + message);
+            };
+            channel.basicConsume(TopicExchange.QUEUE_NAME_3,true,consumer3,consumerTag -> {});
+
+          // connection.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+Main :
+
+package com.tata.amqp.exchange.topic;
+
+
+public class MainTopic {
+    public static void main(String[] args) {
+
+        //Create queues and exchanges
+        TopicExchange topicExchange = new TopicExchange();
+        topicExchange.createExchangeAndQueue();
+
+        //Publish message
+        Publisher publisher = new Publisher();
+        publisher.publish();
+        //read  messages
+        Consumer consumer = new Consumer();
+        consumer.receive();
+
+    }
+}
+.............................................................................................
+				  Headers Exchanges
+				Uses Message Headers
+.............................................................................................
+
+What is Header Exchange?
+ A header exchange is an exchange which routes messages to Queues based on message header values instead of "Routing Key".
+
+Producers adds some values in the form of "key-value"  pair in message header and sends to 
+it headers Exchange.
+
+After a receiving a message, Exchange try to match all or any based on "x-match" header value
+with the binding value of all the queues bound to it.
+
+...........................................................................................
+Producer can add one special value in the header of the message called as "x-match".
+
+"x-match"  can have two different values.
+  "any"
+	any means at least one of the headers key-value pairs must match with binding value of
+the queue.
+
+  "all"
+      All the header key-value pairs must match.
+
+
+Steps:
+
+1.Basic api from the previous code
+
+2.Header Exchange Creation
+
+package com.tata.amqp.exchange.headers;
+
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+public class HeaderExchange {
+    public static String EXCHANGE_NAME = "header-exchange";
+    public static String QUEUE_NAME_1 = "header-queue1";
+    public static String QUEUE_NAME_2 = "header-queue2";
+    public static String QUEUE_NAME_3 = "header-queue3";
+
+    //Routing Key
+    public static String Routing_KEY = "";
+
+    public void createExchangeAndQueue() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+
+            channel.exchangeDeclare(EXCHANGE_NAME, ExchangeType.HEADER.getExchangeName(), true);
+
+            //Queue -1
+            //Headers
+            Map<String, Object> map = null;
+            map = new HashMap<>();
+            map.put("x-match", "any");
+            map.put("First", "A");
+            map.put("Fourth", "D");
+            channel.queueDeclare(QUEUE_NAME_1, true, false, false, null);
+            //Queuebinding
+            channel.queueBind(QUEUE_NAME_1, EXCHANGE_NAME, Routing_KEY, map);
+
+            //Queue2
+            map = new HashMap<>();
+            map.put("x-match", "any");
+            map.put("Third", "C");
+            map.put("Fourth", "D");
+            channel.queueDeclare(QUEUE_NAME_2, true, false, false, null);
+            //Queuebinding
+            channel.queueBind(QUEUE_NAME_2, EXCHANGE_NAME, Routing_KEY, map);
+
+            //Queue3
+            map = new HashMap<>();
+            map.put("x-match", "any");
+            map.put("First", "A");
+            map.put("Third", "C");
+            channel.queueDeclare(QUEUE_NAME_3, true, false, false, null);
+            //Queuebinding
+            channel.queueBind(QUEUE_NAME_3, EXCHANGE_NAME, Routing_KEY, map);
+
+            connection.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+}
+
+2.Publishers
+
+package com.tata.amqp.exchange.headers;
+
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+public class Publisher {
+
+    private final static String MESSAGE_1 = "First Header Message";
+    private final static String MESSAGE_2 = "Second Header Message";
+    private final static String MESSAGE_3 = "Third Header Message";
+
+    public void publish() {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+
+            //Meta Data -First Message
+            AMQP.BasicProperties properties = null;
+            Map<String, Object> map = null;
+            map = new HashMap<>();
+            //header values
+            map.put("First", "A");
+            map.put("Fourth", "D");
+            //Basic properties carry many meta data to exchange.
+            properties = new AMQP.BasicProperties();
+            //injecting headers and its values into basicproperties
+            properties = properties.builder()
+                    .headers(map)
+                    .build();
+            //Publish message with Properties
+            channel.basicPublish(HeaderExchange.EXCHANGE_NAME, HeaderExchange.Routing_KEY, properties, MESSAGE_1.getBytes());
+            System.out.println("Message Sent " + MESSAGE_1);
+
+
+            //Meta Data -First Message
+            map = new HashMap<>();
+            //header values
+            map.put("Third", "C");
+            //Basic properties carry many meta data to exchange.
+            properties = new AMQP.BasicProperties();
+            //injecting headers and its values into basicproperties
+            properties = properties.builder()
+                    .headers(map)
+                    .build();
+            //Publish message with Properties
+            channel.basicPublish(HeaderExchange.EXCHANGE_NAME, HeaderExchange.Routing_KEY, properties, MESSAGE_2.getBytes());
+            System.out.println("Message Sent " + MESSAGE_2);
+
+            //Meta Data -First Message
+            map = new HashMap<>();
+            //header values
+            map.put("First", "A");
+            map.put("Third", "C");
+
+            //Basic properties carry many meta data to exchange.
+            properties = new AMQP.BasicProperties();
+            //injecting headers and its values into basicproperties
+            properties = properties.builder()
+                    .headers(map)
+                    .build();
+            //Publish message with Properties
+            channel.basicPublish(HeaderExchange.EXCHANGE_NAME, HeaderExchange.Routing_KEY, properties, MESSAGE_3.getBytes());
+            System.out.println("Message Sent " + MESSAGE_3);
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+}
+
+3.Consumers
+package com.tata.amqp.exchange.headers;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.rabbitmq.client.Delivery;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+import com.tata.amqp.exchange.topic.TopicExchange;
+
+import java.io.IOException;
+
+public class Consumer {
+
+    public void receive(){
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            DeliverCallback consumer1 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue 1 " + message);
+            };
+            channel.basicConsume(HeaderExchange.QUEUE_NAME_1,true,consumer1, consumerTag -> {});
+
+            DeliverCallback consumer2 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue 2 " + message);
+            };
+            channel.basicConsume(HeaderExchange.QUEUE_NAME_2,true,consumer2, consumerTag -> {});
+
+
+            DeliverCallback consumer3 = (String consumerTag, Delivery delivery) -> {
+                //read message
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Got Message From Queue 3 " + message);
+            };
+            channel.basicConsume(HeaderExchange.QUEUE_NAME_3,true,consumer3, consumerTag -> {});
+
+            // connection.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+Main:
+package com.tata.amqp.exchange.headers;
+
+import com.rabbitmq.client.AMQP;
+import com.tata.amqp.exchange.headers.HeaderExchange;
+import com.tata.amqp.exchange.headers.Publisher;
+import com.tata.amqp.exchange.topic.Consumer;
+
+public class HeadersMain {
+    public static void main(String[] args) {
+        HeaderExchange headerExchange = new HeaderExchange();
+        headerExchange.createExchangeAndQueue();
+
+        Publisher publisher = new Publisher();
+        publisher.publish();
+
+        com.tata.amqp.exchange.topic.Consumer consumer = new Consumer();
+        consumer.receive();
+
+
+    }
+}
+////////////////////////////////////////////////////////////////////////////////////////////
+				Queue And Message Properties
+............................................................................................
+
+Server Named Queues:
+...................
+
+According to AMQP protocal, broker can generate q unique queue name on behalf of an app.
+
+In order to use this option we have to pass "" empty string as the queue name arg.
+
+The same generated queue name can  be obtained by the subsequent methods in the same channel
+by using empty string where  a queue name is expected.
+
+The channel remembers last generated queue name.
+
+-Server Named queues are usefull for temp message pushing and consuming. once the message is consumed, the queue will be deleted automatically.
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+
+public class ServerNamedQueue {
+    private static final String EXCHANGE_NAME = "server-namedExQueue";
+    private static final String QUERY_NAME = ""; // IT must be empty string
+    private static final String ROUTING_KEYS = "mykey";
+    private static final String MESSAGE_1 = "Hello!!!";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, ExchangeType.DIRECT.getExchangeName(), true);
+
+            //Ask the Server to create and give Queue Name: Server Generated Queue
+            String queueName = channel.queueDeclare().getQueue();
+            channel.queueBind(queueName, EXCHANGE_NAME, ROUTING_KEYS);
+
+            //publish message
+            channel.basicPublish(EXCHANGE_NAME, ROUTING_KEYS, null, MESSAGE_1.getBytes());
+
+            DeliverCallback consumer = (consumerTag, delivery) -> {
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println(message);
+                try {
+                    Thread.sleep(5000);
+                    //for deleting queue once the data is consumed
+                    connection.close();
+
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            };
+            //consume message;
+            channel.basicConsume(queueName, true, consumer, consumerTag -> {
+            });
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////
+					Durablity
+.............................................................................................
+
+Durability:
+  Keep things perment.
+
+In rabbitmq, if server/node reboots , then there is possiblity we may loose exchange,queue,message.
+
+In order to maintain persistency, we can set durability property on Exchange and queues
+
+Durability
+  - durable - keeps things permanent even after server restarts
+  - Tranient -  Deletes after server restarts.
+
+
+-Exchange:
+
+Lab:
+
+1. open management console, try to create Exchange with durable and transient properties
+and restart server and have a look at.
+
+2.via coding
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+
+public class DurableExchange {
+    private static final String EXCHANGE_NAME = "server-namedExQueue";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, ExchangeType.DIRECT.getExchangeName(), true);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+DurableQueues:
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+
+public class DurableQueues {
+    private static final String QUEUE_NAME = "tatadurable-queue";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            //here second parameter is durable flag
+            channel.queueDeclare(QUEUE_NAME, true, false, false, null);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+.............................................................................................
+					Temporary Queues
+.............................................................................................
+
+-With some work loads queues are supposed to be short lived.
+.
+
+There are three ways to make queue and its messages deleted automatically.
+
+
+-auto-delete queues
+-Exclusive queues
+-TTLS
+.............................................................................................
+
+Auto delete:
+
+A auto delete will be deleted automatically when its last consumer is cancelled(basic.cancel)
+or gone (connection is closed or lost TCP connection with server).
+
+Use case : With basic.cancel method or channel.close and connection.close method
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.ExchangeType;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class AutoDeleteQueuePublisher {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME,"direct",true);
+            channel.queueDeclare(QUEUE_NAME,true,false,true,null);
+            channel.queueBind(QUEUE_NAME,EXCHANGE_NAME,ROUTING_KEY);
+
+            String message= "Hello RabbitMQ";
+            channel.basicPublish(EXCHANGE_NAME,ROUTING_KEY,null,message.getBytes());
+
+            channel.close();
+            connection.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+
+}
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class AutoDeleteQueueConsumer {
+    private static final String QUEUE_NAME = "demo-queue";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            DeliverCallback callback = (consumerTag, delivery) -> {
+                String message = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Message Received " + message);
+                System.out.println("Consumer Tag" + consumerTag);
+                //if we call cancel method,the node will delete queue , if it has been marked with auto
+                //delete property true
+               // channel.basicCancel(consumerTag);
+            };
+            channel.basicConsume(QUEUE_NAME,true,callback,consumerTag -> {});
+
+            channel.close();
+            connection.close();
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+
+    }
+}
+.............................................................................................
+
+Exclusive Queues:
+.................
+An exclusive queues are queues can be used to consume,purge, delete by cancelling channel or connection.
+
+Exlusive queues are deleted when their declaring connection is close or gone.
+
+Exlusive quues are server named.
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+public class ExclusiveQueus {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct", true);
+
+            //exclusive true
+            channel.queueDeclare(QUEUE_NAME, true, true, true, null);
+            channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY);
+            String message = "Hello RabbitMQ";
+            channel.basicPublish(EXCHANGE_NAME, ROUTING_KEY, null, message.getBytes());
+            System.out.println(QUEUE_NAME + " " + EXCHANGE_NAME + "Message has been published");
+
+            DeliverCallback callback = (consumerTag, delivery) -> {
+                String result = new String(delivery.getBody(), "UTF-8");
+                System.out.println("Message Received " + result);
+                System.out.println("Consumer Tag" + consumerTag);
+            };
+            channel.basicConsume(QUEUE_NAME, true, callback, consumerTag -> {
+            });
+            Thread.sleep(5000);
+            channel.close();
+
+        } catch (IOException | InterruptedException | TimeoutException e) {
+            e.printStackTrace();
+        }
+    }
+}
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+TTL - Time to Live
+ Life time for queues and messages.
+How long queue can be or message can be inside a queue?
+
+............................................................................................
+                                     TTL For Messages 
+..............................................................................................
+
+Queue Arugments:
+
+-Can be set in the management console when queue is created.
+
+args:
+x-message-ttl - value
+x-max-length-bytes
+x-max-length
+x-expires
+
+-Via code
+
+There are two ways
+
+1.Arguments
+2.AMQP.BasicProperties
+
+Map<String,Object> pargs = new HashMap<>();
+pargs.put("x-message-ttl",5000);
+channel.queueDeclare("demoqueue",false,false,false,pargs);
+
+public class TTLQueuesUsingArgs {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct", true);
+            String message = "Hello RabbitMQ";
+
+            Map<String, Object> queueArgs = new HashMap<>();
+            queueArgs.put("x-message-ttl", 10000);
+            channel.queueDeclare(QUEUE_NAME, true, false, false, queueArgs);
+            channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY);
+
+            channel.basicPublish(EXCHANGE_NAME, ROUTING_KEY, null, message.getBytes());
+            System.out.println(QUEUE_NAME + " " + EXCHANGE_NAME + "Message has been published");
+            channel.close();
+            connection.close();
+
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+
+
+    }
+}
+...........................................................................................
+2.AMQP.BasicProperties
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.concurrent.TimeoutException;
+
+
+public class TTLQueuesUsingBasicProperties {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct", true);
+            String message = "Hello RabbitMQ";
+
+            channel.queueDeclare(QUEUE_NAME, true, false, false, null);
+            channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY);
+
+            //BasicProperties
+            AMQP.BasicProperties props = new AMQP.BasicProperties()
+                    .builder()
+                    .expiration("10000")
+                    .build();
+
+            //pass props to publisher
+            channel.basicPublish(EXCHANGE_NAME, ROUTING_KEY, props, message.getBytes());
+            System.out.println(QUEUE_NAME + " " + EXCHANGE_NAME + "Message has been published");
+            channel.close();
+            connection.close();
+
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+
+
+    }
+}
+.............................................................................................
+					TTL Queues
+.............................................................................................
+
+-Queue will expire after a period of time only when they are not used(do not have consumers)
+ This feature can be used along with the auto-delete property.
+
+TTL + Autodelete = true
+
+Property:
+x-expiries
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
+
+public class TTLQueueDeletion {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct", true);
+            //Args
+            Map<String, Object> queueArgs = new HashMap<>();
+            queueArgs.put("x-expires", 10000);
+            channel.queueDeclare(QUEUE_NAME, true, false, true, queueArgs);
+            channel.queueBind(QUEUE_NAME,EXCHANGE_NAME,ROUTING_KEY);
+
+            String message= "Hello RabbitMQ";
+            channel.basicPublish(EXCHANGE_NAME,ROUTING_KEY,null,message.getBytes());
+
+            channel.close();
+            connection.close();
+
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+
+    }
+}
+............................................................................................
+					  MAX Length
+			 (How many messages a queue can contain)
+.............................................................................................
+
+How queues stores messages?
+  A queue is a sequential data structure with two primary operations
+
+-enque -  item can be added at the tail 
+-dequeue - item can be removed from the head.
+
+Queues are first in first out -FIFO.
+
+Consuming message means removing message from the queue.
+
+Message Removal From the queue based on ack property.
+
+-Nack Message, requeue true
+   -Message may or may not have been delivered to the consumer.
+
+Consumer consumed message with Nack
+
+Contex /Use cases we go with Nack
+
+- if message is consumed by the consumer, but consumer wants not to delete the message from
+the broker
+
+  Consumer sends Nack(Negative Ack) and another property called requeue=true to the broker 
+ 
+Broker will try to "requeue" the message.
+
+.............
+
+-Ack message requeue false
+
+ The consumer says, message succefully proceed, delete that message from the queue.
+..............................................................................................
+
+How many(ready) messages a queue can contain before it starts to "drop them from its head"?
+
+  x-max-length arguement
+
+
+When we  publish lets say 10 messages, Queue contains last 5 messages only. first 5 messages to be discarded.
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
+
+public class MaxLengthQueueArgPublisher {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct", true);
+            Map<String, Object> queueArgs = new HashMap<>();
+            queueArgs.put("x-max-length", 5);
+           channel.queueDeclare(QUEUE_NAME, true, false, false, queueArgs);
+           // channel.queueDeclare(QUEUE_NAME, true, false, false, null);
+
+            channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY);
+
+            for (int i = 1; i <= 10; i++) {
+                String message = "Hello " + i;
+                channel.basicPublish(EXCHANGE_NAME, ROUTING_KEY, null, message.getBytes());
+                System.out.println(QUEUE_NAME + EXCHANGE_NAME + message + "has been published");
+            }
+            channel.close();
+            connection.close();
+
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+
+    }
+}
+............................................................................................
+
+Similar x-max-length property, we have x-max-length-bytes
+  
+ The size of queue 10 byte, beyond that it will be dropped automatically.
+
+  Map<String, Object> queueArgs = new HashMap<>();
+  queueArgs.put("x-max-length-bytes", 5);
+  Channel.queueDeclare(QUEUE_NAME, true, false, false, queueArgs);
+............................................................................................         			  Overflow Behaviour
+...........................................................................................
+
+Sets the queue overflow behaviour.
+This determines what happens to messages when the maximum length of a queue is reached.
+
+Valid values are drop-head, reject-publish or reject-publish-dlx. The quorum queue type only supports drop-head and reject-publish.
+
+drop-head- The head of the queue message can be deleted
+Reject-publish - recently sent message will be discard
+Reject-publish-dlx -  Rejection message to be a dead letter exchange.
+
+ Map<String, Object> queueArgs = new HashMap<>();
+ queueArgs.put("x-overflow", "reject-publish");
+
+package com.tata.amqp.queues;
+
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
+
+
+public class QueueOverFlowMaxLength {
+    private static final String EXCHANGE_NAME = "demo-exchange";
+    private static final String QUEUE_NAME = "demo-queue";
+    private static final String ROUTING_KEY = "demokey";
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.exchangeDeclare(EXCHANGE_NAME, "direct", true);
+            Map<String, Object> queueArgs = new HashMap<>();
+            queueArgs.put("x-max-length", 5);
+            //queueArgs.put("x-overflow","drop-head");
+            queueArgs.put("x-overflow","reject-publish");
+            channel.queueDeclare(QUEUE_NAME, true, false, false, queueArgs);
+
+            channel.queueBind(QUEUE_NAME, EXCHANGE_NAME, ROUTING_KEY);
+
+            for (int i = 1; i <= 10; i++) {
+                String message = i + "";
+                channel.basicPublish(EXCHANGE_NAME, ROUTING_KEY, null, message.getBytes());
+                System.out.println(QUEUE_NAME + EXCHANGE_NAME + message + "has been published");
+            }
+            channel.close();
+            connection.close();
+
+        } catch (IOException | TimeoutException e) {
+            e.printStackTrace();
+        }
+
+    }
+}
+
+
+Client Code:
+
+Open Management Console, Consume Messages using getMessage Options.
+
+
+Overflow behaviour can be handled
+ -by deleting messages
+ -by not accepting messages
+
+
+...........................................................................................
+if i dont want to loose message in case overflow behaviour is happend
+				Dead Letter Exchange Queue
+........................................................................................
+
+What is Dead Letter Exchange Queue?
+ 
+ Messages from a queue can be dead lettered, that is republished to an exchange when any of the following events.
+
+-The message is negatively ack by a consumer using basic.reject or basic.nack with request parameter set to false.
+
+-The message expire using ttl property
+
+-The message is droped due to max length /bytes execeed limit
+
+Dead Letter exchanges are normal regular exchanges only.
+
+Dead Letter exchange is mapped by application queue's arg.
+
+ 
+Map<String, Object> queueArgs = new HashMap<>();
+queueArgs.put("x-max-length", 5);
+queueArgs.put("x-overflow","reject-publish-dlx");
+queueArgs.put("x-dead-letter-exchange","exchange-name"); 
+queueArgs.put("x-dead-letter-routing-key","myroutingkey")       
+channel.queueDeclare(QUEUE_NAME, true, false, false, queueArgs);
+
+
+Publisher------------Exchange-----Queue----Overflow---routingKey--DeadLetterExchange---binding------DeadLetterExchangQ1,DeadLetterExchangeQ2..
+
+
+Using Managment Console:
+
+Steps : 
+
+1.create Exchange 
+  - myexchange1 - for application publisher
+  - dlx1 - for DeadLetter Exchange.
+
+
+2.Create Quque
+  - myqueue1  - for application
+	durable
+    args
+	x-dead-letter-exchange     dlx1
+   	x-dead-letter-routing-key  dlx.timeout.test1
+        x-message-ttl		   2000
+
+3.Queue binding with Exchange
+
+
+3.publish message into Myexchange1
+  Have look at management dashboard, how messages are routed to deadletter exchange and queue.
+.............................................................................................
+				 Distributed RabbitMQ
+
+-Cluster
+-Federation
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
