@@ -3207,35 +3207,993 @@ Steps :
 3.publish message into Myexchange1
   Have look at management dashboard, how messages are routed to deadletter exchange and queue.
 .............................................................................................
-				 Distributed RabbitMQ
+				RPC - In micro services
+..............................................................................................
 
--Cluster
--Federation
+What is RPC ?
+
+RPC standards for Remote Procedure call.
+
+Calling methods from one program to another program.
+
+When we invoke methods across the runtime, network is involded ,we require protocal communication.
+
+                Program -A -----talks to ----------------Program-B
+		    |                                      |
+		Runtime                                  Runtime
+              (JVM/Javascript)                         (JVM/C++/Python/Javascript)
+
+How to implement RPC Programming?
+
+1.If runtime is same, JVM(java) -RMI,ORB(EJB) - very old 
+
+2.if same runtime or different runtime(language) you can use -  gRpc
+  gRpc uses tcp protocal for communication.
+
+3.if same runtime or different runtime you can use message brokers - rabbitMQ,Kafka,Redis...
 
 
+RPC Programming types:
+
+1.sync programming
+   caller(publisher) will be waiting until the consumer(worker) has processed the task.
+   we other wise called "blocking"
+2.async programming
+   caller can continue his work, no need to wait for consumer result
+   called as "non blocking".
+
+How to implement async programming?
+
+1.at language/framework/lib api level, eg nodejs,java-nio/vertx/quarkus....
+  It is only vaild with in same runtime.
+
+2.what if we need to run a function on  a remote machine and wait for the result?
+  
+  -Message Brokers,gRpc implementations.
+..............................................................................................
+				NonBlocking-Async RPC Programs in RabbitMQ
+
+...............................................................................................
+
+Implementation:
+
+1.Client Interface -Publisher
+2.Server interface - Consumer/worker.
+
+RPC concepts in RabbitMQ:
+
+1.callback Queue:
+   A client sends a request message and a server replies with a response message.
+  
+In order to receive a response we need to send a 'callback' queue address with the request.
+
+Publisher uses two queues:
+
+1.For publishing message (request Message)
+
+2.For getting response message (callback queue) - callback queue can be server named queue or programmed defined queue.
+
+Syntax:
+
+//callback queue creation
+String callbackQueue= channel.queueDeclare().getQueue()
+
+How to send callback queue along with message publish?
+
+AMQP.BasicPropertie:
+
+public AMQP.BasicProperties.Builder replyTo​(String replyTo)
+  The method is used to register callbackqueu
+
+AMQP.BasicProperties props =new AMQP.BasicProperties()
+                               .Builder()
+                               .replyTo(callbackQueue)
+			       .build();
+
+String messageQueue="rpc_queue";
+
+channel.basicPublish("",messageQueue,props,message.getBytes());
+
+Important Message properties:
+
+1.content-Type
+  to send what type of content - textplain,json
+2.replyTo 
+  to register callback queue
+3.correlationId 
+  Useful to corrleate RPC responses with requests.
 
 
+Correlation Id:
+...............
+ As we discussed , we are creating new  callback for every RPC Request.
+
+Client-1------CallbackQueue-1-------
+Client-2------CallbackQueue-2-------
+Client-2------CallbackQueue-3-------
+
+The problm is now every client has its own queue, having received a response in that queue
+it is not clear to which request the response belongs to.
+
+We need response identification, that's where correlationid property is used.
+
+We are going to set it to unique value for every request.Later when we receive a message inthe
+callback queue we will look at this property and based on that we will able to match a response.
+if we see unknown correlationId value, we may safely discard the message. if it does not belong to our request.
+
+Client--Request------>|callback---------->queue---------->Caller
+
+Client<---response<----Callback<----correlationId<-----Caller.
+
+Problems In the RPC Server:
+
+What if a server dies, after processing, during processing, how to send response to clients
+-Ack comes into picture.
+
+if no ack , the message again will requeued for further process.
+
+...........................................................................................
+
+Flow:
+
+1.For RPC request, the Client sends a message with two properties, replyTo which is servernamed queue created just for request and corrleationId which is set to a unique value for every request, later used for processing responses.
 
 
+2.The RPC server(worker) is waiting for requests on that queue. When a request appears, it does the job and sends a message with result back to client using the the reqly queue .
+
+3.The client waits for data on the reply queue. when a message appears, it checks the corrleation id property. if it matches the value from the request it returns the response to the application.
+............................................................................................
+
+package com.tata.amqp.rpc;
+
+import com.rabbitmq.client.*;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeoutException;
+
+public class RPCPublisher implements AutoCloseable {
+    private Connection connection;
+    private Channel channel;
+    private String requestQueueName = "rpc_queue";
+
+    public RPCPublisher() {
+        connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            channel = connection.createChannel();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+
+        try (RPCPublisher rpcPublisher = new RPCPublisher()) {
+            for (int i = 0; i < 100; i++) {
+                String i_str = Integer.toString(i);
+                System.out.println("Requesting fib " + i_str + " ");
+                Thread.sleep(1000);
+                String response = rpcPublisher.call(i_str);
+                System.out.println("GOT " + response + " ");
+
+            }
+        } catch (IOException | TimeoutException | InterruptedException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private String call(String message) throws IOException, InterruptedException {
+        //send request : corrleationId,replyQue
+        final String corrleationId = UUID.randomUUID().toString();
+        //create queueName
+        String replyQueueName = channel.queueDeclare().getQueue();
+        AMQP.BasicProperties props = new AMQP.BasicProperties()
+                .builder()
+                .correlationId(corrleationId)
+                .replyTo(replyQueueName)
+                .build();
+
+        channel.basicPublish("", requestQueueName, props, message.getBytes("UTF-8"));
+        //Read Response
+        //Store the responses into BlockingQueue datastructure
+        //Blocking- dont close the current thread until the message is delivered.
+        final BlockingQueue response = new ArrayBlockingQueue(1);
+        //Listener for message
+        DeliverCallback callback = (String consmerTag, Delivery delivery) -> {
+            if (delivery.getProperties().getCorrelationId().equals(corrleationId)) {
+                //store response into blocking queue
+                try {
+                    response.offer(new String(delivery.getBody(), "UTF-8"));
+                } catch (UnsupportedEncodingException e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+        String consmerTag = channel.basicConsume(replyQueueName, true, callback, consumerTag -> {
+        });
+        String result = response.take().toString();
+        //cancel the consumer
+        channel.basicCancel(consmerTag);
+        return result;
+    }
+
+    @Override
+    public void close() throws Exception {
+        connection.close();
+    }
+}
+
+java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.rpc.RPCPublisher
 
 
+RPC Server:
+package com.tata.amqp.rpc;
+
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.DeliverCallback;
+import com.tata.amqp.basic.RabbitMQConnectionUtil;
+
+import java.io.IOException;
+
+public class RPCServer {
+    private static final String RPC_QUEUE_NAME = "rpc_queue";
+
+    private static int fib(int n) {
+        if (n == 0) return 0;
+        if (n == 1) return 1;
+        return fib(n - 1) + fib(n - 2);
+    }
+
+    public static void main(String[] args) {
+        Connection connection = RabbitMQConnectionUtil.getConnection();
+        try {
+            Channel channel = connection.createChannel();
+            channel.queueDeclare(RPC_QUEUE_NAME, false, false, false, null);
+            //delete messages
+            channel.queuePurge(RPC_QUEUE_NAME);
+            channel.basicQos(1);
+            System.out.println("Server is Wating For Request");
+
+            Object monitor = new Object();
+
+            DeliverCallback callback = (ConsumerTag, delivery) -> {
+                AMQP.BasicProperties props = new AMQP.BasicProperties()
+                        .builder()
+                        .correlationId(delivery.getProperties().getCorrelationId())
+                        .build();
+                String response = " ";
+                try {
+                    String message = new String(delivery.getBody(), "UTF-8");
+                    int n = Integer.parseInt(message);
+                    System.out.println(" Message  " + n );
+                    response = response + fib(n);
+
+                } catch (RuntimeException e) {
+
+                } finally {
+                    //republish the response to client
+                    channel.basicPublish("", delivery.getProperties().getReplyTo(), props, response.getBytes("UTF-8"));
+                    channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                    synchronized (monitor) {
+                        monitor.notify();
+                    }
+                }
+
+            };
+
+            channel.basicConsume(RPC_QUEUE_NAME, false, callback, (consumerTag, sig) -> {
+            });
+
+            //code for waiting indefintly
+            while (true) {
+                synchronized (monitor) {
+                    try {
+                        monitor.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+java -classpath C:\session\tata\RabbitMQ\RabbitMQJavaClientApp\target\classes;C:\Users\sasub\.m2\repository\com\rabbitmq\amqp-client\5.7.1\amqp-client-5.7.1.jar;C:\Users\sasub\.m2\repository\org\slf4j\slf4j-api\1.7.26\slf4j-api-1.7.26.jar com.tata.amqp.rpc.RPCPublisher
+.............................................................................................
+			    Task Queue In enterprise(RPC)
+				    (Celery)
+..............................................................................................
+
+Celery is a task queue lib written in python.
+Celery is task runner can be integrated with any message broker - rabbitmq,kafka,redis...
 
 
+Steps:
+
+1.Select Message Broker - RabbitMQ
+2.install celery
+   -python
+   -pip 
+3.install celery dependancies
+
+install celery,ampq,redis modules
+
+pip install celery
+pip install amqp
+pip install redis 
+pip install eventlet
 
 
+4.Test celery has been installed in system.
+
+tasks:
+
+tasks.py
+
+from celery import Celery
+from time import sleep
+
+app = Celery('tasks', backend='redis://localhost', broker='amqp://guest:guest@localhost:5672/')
+
+@app.task 
+def reverse(text):
+    sleep(5)
+    return text[::-1]
 
 
+Run Redis:
+docker run -d redis
 
 
+C:\session\tata\rabbitmq\CeleryTasks> celery -A tasks worker --loglevel=INFO -P eventlet
+
+-------------- celery@LAPTOP-R2TGGFDL v5.1.2 (sun-harmonics)
+--- ***** -----
+-- ******* ---- Windows-10-10.0.19042-SP0 2021-07-16 12:37:57
+- *** --- * ---
+- ** ---------- [config]
+- ** ---------- .> app:         tasks:0x1f0fbfc7220
+- ** ---------- .> transport:   amqp://guest:**@localhost:5672//
+- ** ---------- .> results:     redis://localhost/
+- *** --- * --- .> concurrency: 12 (eventlet)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** -----
+ -------------- [queues]
+                .> celery           exchange=celery(direct) key=celery
 
 
+[tasks]
+  . tasks.reverse
+
+[2021-07-16 12:37:57,401: INFO/MainProcess] Connected to amqp://guest:**@127.0.0.1:5672//
+[2021-07-16 12:37:57,409: INFO/MainProcess] mingle: searching for neighbors
+[2021-07-16 12:37:58,462: INFO/MainProcess] mingle: all alone
+[2021-07-16 12:37:58,479: INFO/MainProcess] celery@LAPTOP-R2TGGFDL ready.
 
 
+Sending tasks:
+
+S C:\session\tata\rabbitmq\CeleryTasks> py
+Python 3.9.5 (tags/v3.9.5:0a7dcbd, May  3 2021, 17:27:52) [MSC v.1928 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from tasks import reverse
+>>> result = reverse.delay('hello')
+>>> result
+<AsyncResult: dc2f6be0-74cb-47b8-b999-666ed25e921f>
+>>> result.status
+'SUCCESS'
+>>> result.get()
+'olleh'
+>>> result = reverse.delay('hello')
+>>> result
+<AsyncResult: 06cc004c-071c-44d9-9fe5-c8b82a9cbb49>
+>>> result.status
+'PENDING'
+>>> result.get()
+'olleh'
+>>> result
+<AsyncResult: 06cc004c-071c-44d9-9fe5-c8b82a9cbb49>
+>>> result.status
+'SUCCESS'
+>>> result = reverse.delay('hello')
+>>> result
+<AsyncResult: 74317f3c-cc72-4205-881a-7cf57db2023e>
+>>> result.status
+'SUCCESS'
+>>> result = reverse.delay('hello')
+>>> result = reverse.delay('hello')
+>>> result = reverse.delay('suburamanian')
+
+Check results in redis
+
+root@3fd493ef2d15:/data# redis-cli
+127.0.0.1:6379> keys *
+ 1) "celery-task-meta-faf8a861-a28a-4a5f-a803-0475578d8347"
+ 2) "celery-task-meta-ae768ff7-ff49-4fe4-9d89-b248b39780ad"
+ 3) "celery-task-meta-dc2f6be0-74cb-47b8-b999-666ed25e921f"
+ 4) "celery-task-meta-5253e658-5d17-4545-b2e3-5db746f3650c"
+ 5) "celery-task-meta-06cc004c-071c-44d9-9fe5-c8b82a9cbb49"
+ 6) "celery-task-meta-0222b9ee-83e3-4853-b11b-05b6db64c58c"
+ 7) "celery-task-meta-ec602328-b31d-469b-ad4b-17af5d70592d"
+ 8) "celery-task-meta-bbc83bc4-eb14-49a9-a20e-14a031317fd0"
+ 9) "celery-task-meta-8b1958b5-b0b7-4f76-878a-c45a301bf98e"
+10) "celery-task-meta-74317f3c-cc72-4205-881a-7cf57db2023e"
+11) "celery-task-meta-97bc2e0e-e7f2-4cfa-ac7d-bae53234beaf"
+12) "celery-task-meta-09ca8ed7-a706-489e-abf0-3e57dd93d681"
+13) "celery-task-meta-0235d181-7f40-4836-afcb-4950af7f009e"
+
+127.0.0.1:6379> get celery-task-meta-89acd7d0-1c7e-45fc-9b8e-6bbe27ae449a
+"{\"status\": \"SUCCESS\", \"result\": \"nainamarubus\", \"traceback\": null, \"children\": [], \"date_done\": \"2021-07-16T07:09:20.088612\", \"task_id\": \"89acd7d0-1c7e-45fc-9b8e-6bbe27ae449a\"}"
+127.0.0.1:6379>
+............................................................................................
+				Scalling and HighAvaiablity
+.............................................................................................
+What is Clustering?
+ A RabbitMq cluster is a logical grouping of one or servel nodes, each sharing users,virtualhosts,queues and exchanges, runtime parameters, other distribtued state
 
 
+Why clustering?
 
+-To avoid fail-overs
+-To improve performance 
+
+
+Cluster Implementation:
+
+RabbitMQ supports different way of clustering.
+
+1.Declaratively by listing cluster nodes in config file : via config file
+2.Manually with rabbitmqctl
+With plugins:
+3.Declaratively using AWS(EC2) instance discovery plugin
+4.Declaratively using Kubernetes discovery plugin
+5.Declaratively consule based dicovery plugin
+6.Declaratively etcd-based discovery plugin
+
+
+Cluster Requirements:
+
+in order form and setup cluster , there are certain requirements must meet.
+
+1.Node names(identifiers)
+ 
+ RabbitMQ nodes are identified each other in cluster by node names
+
+Node Name Syntax:
+ Node name contains two parts
+prefix@hostname
+
+rabbit@tata.messaging.svc.local
+rabbit@containerName
+
+-Node names must be unique.
+rabbit1@hostame
+
+2.HostName resolution
+
+-RabbitMQ identifies nodes eatch other using domain names. either short or fully qualified(FQDNS).
+
+-Hosts can be
+  -DNS Records
+  -/etc/hosts
+  -container names
+
+3.PORT Access
+
+Rabbit MQ nodes bind to ports in order to accept client and CLI tool connections.
+Internally Rabbit Uses tcp connections.
+
+Port Range and its uses:
+........................
+4369 : It is used by rabbit dameon nodes and cli tools
+5672,5671- used by clients.
+25672 : inter node communication and cli tool communication
+15672 :HTTP management port,http api , clients
+etc...
+...........................................................................................
+
+Nodes in a cluster:
+...................
+
+1.Replication:
+
+ Keeping the same state/data/queue/exchange across the nodes in the cluster.
+
+2.Nodes are equal Peers:
+
+ Some distributed systems have master and slave nodes.
+ This is not available in RabbitMQ.
+ All nodes in a RabbitMQ cluster are qual.
+............................................................................................
+
+Node Authentication:
+....................
+
+RabbitMQ Nodes , and Cli tools use a cookie to determine whether they are allowed to communicate with each other.
+For two nodes to be able to communicate they must have the same shared secret called the 
+"Erlang cookie".
+
+The cookie is just a string of alphanumeric characters up to 255 characters in size.
+
+Every cluster node must have the same cookie.
+
+Erlang cookie is stored in a file.
+
+if that file not available, server will try to create a cookie file and also generte cookie.
+
+location of cookie file  /var/lib/rabbitmq/.erlang.cookie
+
+Incase of docker and Kubernetes env, we have to generate cookie with help of "RABBITMQ_ERLANG_COOKIE"
+
+.............................................................................................
+				Cluster Setup:
+
+
+Req:
+-Docker desktop.
+
+Basic steps:
+
+1.create docker network
+  Docker network is used for setup nodes, node communication.
+ 
+> docker network create rabbits
+
+
+2.Create rabbitmq container without management console.
+
+docker run -d --rm --net rabbits --hostname rabbit-1 --name rabbit-1 rabbitmq:3.8
+
+3.how to grab existing erlang cookie
+
+docker exec -it rabbit-1 cat /var/lib/rabbitmq/.erlang.cookie
+
+output: 
+NSKDCNXVRZFBJEQXLKTC
+.............................................................................................
+
+Cluster setup:
+
+Manually with rabbitmqctl:
+
+Steps:
+
+1.Start three nodes with management console.
+
+node-1
+
+docker run -d --rm --net rabbits --hostname rabbit-1 --name rabbit-1 -p 8081:15672 rabbitmq:3.8-management
+
+
+docker run -d --rm --net rabbits --hostname rabbit-2 --name rabbit-2 -p 8082:15672 rabbitmq:3.8-management
+
+docker run -d --rm --net rabbits --hostname rabbit-3 --name rabbit-3 -p 8083:15672 rabbitmq:3.8-management
 
   
+Once if run these , open browser and check whether management console is running or not
+
+http://localhost:8081
+http://localhost:8082
+http://localhost:8083
+...........................................................................................
+Cluster Status Verification:
+
+We need rabbitmqctl command
+
+>docker exec -it rabbit-1 rabbitmqctl
+
+>docker exec -it rabbit-1 rabbitmqctl  cluster_status
+Cluster status of node rabbit@rabbit-1 ...
+Basics
+
+Cluster name: rabbit@rabbit-1
+
+Disk Nodes
+
+rabbit@rabbit-1
+
+Running Nodes
+
+rabbit@rabbit-1
+
+Versions
+
+rabbit@rabbit-1: RabbitMQ 3.8.19 on Erlang 24.0.3
+
+Maintenance status
+
+Node: rabbit@rabbit-1, status: not under maintenance
+
+Alarms
+
+(none)
+
+Network Partitions
+
+(none)
+
+Listeners
+
+Node: rabbit@rabbit-1, interface: [::], port: 15672, protocol: http, purpose: HTTP API
+Node: rabbit@rabbit-1, interface: [::], port: 15692, protocol: http/prometheus, purpose: Prometheus exporter API over HTTP
+Node: rabbit@rabbit-1, interface: [::], port: 25672, protocol: clustering, purpose: inter-node and CLI tool communication
+Node: rabbit@rabbit-1, interface: [::], port: 5672, protocol: amqp, purpose: AMQP 0-9-1 and AMQP 1.0
+
+Feature flags
+
+Flag: drop_unroutable_metric, state: enabled
+Flag: empty_basic_get_metric, state: enabled
+Flag: implicit_default_bindings, state: enabled
+Flag: maintenance_mode_status, state: enabled
+Flag: quorum_queue, state: enabled
+Flag: user_limits, state: enabled
+Flag: virtual_host_metadata, state: enabled
+
+Like above we can test all nodes
+docker exec -it rabbit-2 rabbitmqctl  cluster_status
+docker exec -it rabbit-3 rabbitmqctl  cluster_status
+.............................................................................................
+
+Connecting all nodes:
+
+Using Manual Process:Manually creating cluster.
+
+if any node wants to join with cluster, they will loose all the data which has been stored.
+
+In order to join node with cluster, we need to reset the node.
+
+Note:
+if all nodes to talk each other who needs "common cookie". if nodes have different cookies cant talk each other. 
+
+In the previous setup, we had started server, have different cookies so those nodes cant particpate in cluster lets have cookie values
+
+docker exec -it rabbit-1 cat /var/lib/rabbitmq/.erlang.cookie
+LFLYARBMPYZTAJPLXNNM
+
+docker exec -it rabbit-2 cat /var/lib/rabbitmq/.erlang.cookie
+YJJXYPKYFDXXIJGZZIJG
+
+docker exec -it rabbit-3 cat /var/lib/rabbitmq/.erlang.cookie
+YXSDKTGXFDYFYWZHFULS
+
+In order setup nodes having common cookie, first remove all started nodes
+
+docker rm -f rabbit-1
+docker rm -f rabbit-2
+docker rm -f rabbit-3
+.............................................................................................
+
+Start all the nodes with common cookie
+
+docker run -d --rm --net rabbits --hostname rabbit-1 --name rabbit-1 -p 8081:15672 -e RABBITMQ_ERLANG_COOKIE=LFLYARBMPYZTAJPLXNNM rabbitmq:3.8-management
+
+
+docker run -d --rm --net rabbits --hostname rabbit-2 --name rabbit-2 -p 8082:15672 -e RABBITMQ_ERLANG_COOKIE=LFLYARBMPYZTAJPLXNNM rabbitmq:3.8-management
+
+docker run -d --rm --net rabbits --hostname rabbit-3 --name rabbit-3 -p 8083:15672 -e RABBITMQ_ERLANG_COOKIE=LFLYARBMPYZTAJPLXNNM rabbitmq:3.8-management
+
+
+Test all nodes having same cookie or not:
+
+docker exec -it rabbit-1 cat /var/lib/rabbitmq/.erlang.cookie
+LFLYARBMPYZTAJPLXNNM
+PS C:\session\tata\rabbitmq> docker exec -it rabbit-2 cat /var/lib/rabbitmq/.erlang.cookie
+LFLYARBMPYZTAJPLXNNM
+PS C:\session\tata\rabbitmq> docker exec -it rabbit-3 cat /var/lib/rabbitmq/.erlang.cookie
+LFLYARBMPYZTAJPLXNNM.
+
+Now all nodes in the same network and having same cookie. so able to connect each other.
+
+#join the rabbit-2
+
+Steps for joing:
+
+you have to use rabbitmqctl command in order perform these operations
+
+1.stop application which is already running 
+
+$docker exec -it rabbit-2 rabbitmqctl stop_app
+
+RABBITMQ_ERLANG_COOKIE env variable support is deprecated and will be REMOVED in a future version. Use the $HOME/.erlang.cookie file or the --erlang-cookie switch instead.
+Stopping rabbit application on node rabbit@rabbit-2 ...
+
+2.Reset content inside node
+
+$docker exec -it rabbit-2 rabbitmqctl reset
+RABBITMQ_ERLANG_COOKIE env variable support is deprecated and will be REMOVED in a future version. Use the $HOME/.erlang.cookie file or the --erlang-cookie switch instead.
+Resetting node rabbit@rabbit-2 ...
+
+3.joining with cluster
+ 
+$docker exec -it rabbit-2 rabbitmqctl join_cluster rabbit@rabbit-1
+ RABBITMQ_ERLANG_COOKIE env variable support is deprecated and will be REMOVED in a future version. Use the $HOME/.erlang.cookie file or the --erlang-cookie switch instead.
+Clustering node rabbit@rabbit-2 with rabbit@rabbit-1
+
+4.Restart the app in order see management console and use all features
+
+$docker exec -it rabbit-2 rabbitmqctl start_app
+
+5.Check management console or command line to know the cluster information
+docker exec -it rabbit-2 rabbitmqctl cluster_status
+
+
+RABBITMQ_ERLANG_COOKIE env variable support is deprecated and will be REMOVED in a future version. Use the $HOME/.erlang.cookie file or the --erlang-cookie switch instead.
+Cluster status of node rabbit@rabbit-2 ...
+Basics
+
+Cluster name: rabbit@rabbit-2
+
+Disk Nodes
+
+rabbit@rabbit-1
+rabbit@rabbit-2
+
+Running Nodes
+
+rabbit@rabbit-1
+rabbit@rabbit-2
+
+Versions
+
+rabbit@rabbit-1: RabbitMQ 3.8.19 on Erlang 24.0.3
+rabbit@rabbit-2: RabbitMQ 3.8.19 on Erlang 24.0.3
+
+Maintenance status
+
+Node: rabbit@rabbit-1, status: not under maintenance
+Node: rabbit@rabbit-2, status: not under maintenance
+
+Alarms
+
+(none)
+
+Network Partitions
+
+(none)
+
+Listeners
+
+Node: rabbit@rabbit-1, interface: [::], port: 15672, protocol: http, purpose: HTTP API
+Node: rabbit@rabbit-1, interface: [::], port: 15692, protocol: http/prometheus, purpose: Prometheus exporter API over HTTP
+Node: rabbit@rabbit-1, interface: [::], port: 25672, protocol: clustering, purpose: inter-node and CLI tool communication
+Node: rabbit@rabbit-1, interface: [::], port: 5672, protocol: amqp, purpose: AMQP 0-9-1 and AMQP 1.0
+Node: rabbit@rabbit-2, interface: [::], port: 15672, protocol: http, purpose: HTTP API
+Node: rabbit@rabbit-2, interface: [::], port: 15692, protocol: http/prometheus, purpose: Prometheus exporter API over HTTP
+Node: rabbit@rabbit-2, interface: [::], port: 25672, protocol: clustering, purpose: inter-node and CLI tool communication
+Node: rabbit@rabbit-2, interface: [::], port: 5672, protocol: amqp, purpose: AMQP 0-9-1 and AMQP 1.0
+
+Feature flags
+
+Flag: drop_unroutable_metric, state: enabled
+Flag: empty_basic_get_metric, state: enabled
+Flag: implicit_default_bindings, state: enabled
+Flag: maintenance_mode_status, state: enabled
+Flag: quorum_queue, state: enabled
+Flag: user_limits, state: enabled
+Flag: virtual_host_metadata, state: enabled
+...........................................................................................
+
+#join the rabbit-3
+
+docker exec -it rabbit-3 rabbitmqctl stop_app
+docker exec -it rabbit-3 rabbitmqctl reset
+docker exec -it rabbit-3 rabbitmqctl join_cluster rabbit@rabbit-1
+docker exec -it rabbit-3 rabbitmqctl start_app
+docker exec -it rabbit-3 rabbitmqctl cluster_status
+
+............................................................................................
+
+Setup new Node:
+
+# Node start
+
+docker run -d --rm --net rabbits --hostname rabbit-4 --name rabbit-4 -p 8084:15672 -e RABBITMQ_ERLANG_COOKIE=LFLYARBMPYZTAJPLXNNM rabbitmq:3.8-management
+
+#join the rabbit-4
+
+docker exec -it rabbit-4 rabbitmqctl stop_app
+docker exec -it rabbit-4 rabbitmqctl reset
+docker exec -it rabbit-4 rabbitmqctl join_cluster rabbit@rabbit-2
+docker exec -it rabbit-4 rabbitmqctl start_app
+docker exec -it rabbit-4 rabbitmqctl cluster_status
+..............................................................................................
+			Way 2 : Setting up Cluster via Config files
+..............................................................................................
+
+Why this approach?
+
+When we are running rabbitmqq inside disposble container,When containers destroyed, rabbitmq
+starts,who cant join cluster automatically. because there is no persistency eg if rabbit-4 deleted, again rabbit-4 cant rejoin the cluster.
+
+Automatic Rejoining when container is destroyed and up
+   Config file approach is good one.
+
+
+in order to implement we need to delete all the containers which were running
+docker rm -f rabbit-1
+docker rm -f rabbit-2
+docker rm -f rabbit-3
+docker rm -f rabbit-4
+
+Setup Req:
+
+1.we need config file, where we need to define cluster configuration.
+
+folder structure:
+
+$cluster
+   |
+   config
+     |
+     rabbit-1
+     rabbit-2
+     rabbit-3
+
+Inside rabbit-1
+
+rabbitmq.conf
+
+loopback_users.guest = false
+listeners.tcp.default = 5672
+
+cluster_formation.peer_discovery_backend = rabbit_peer_discovery_classic_config
+cluster_formation.classic_config.nodes.1 = rabbit@rabbit-1
+cluster_formation.classic_config.nodes.2 = rabbit@rabbit-2
+cluster_formation.classic_config.nodes.3 = rabbit@rabbit-3
+
+
+
+cluster_formation.peer_discovery_backend  :
+  What type of discovery server, we are going to use to know the nodes.
+Nodes communicate via this discovery server only.
+ 
+
+We have to repeate the same configuration for all nodes.
+
+
+docker run -d --rm --net rabbits `
+-v ${PWD}/config/rabbit-1/:/config/ `
+-e RABBITMQ_CONFIG_FILE=/config/rabbitmq `
+-e RABBITMQ_ERLANG_COOKIE=WIWVHCDTCIUAWANLMQAW `
+--hostname rabbit-1 `
+--name rabbit-1 `
+-p 8081:15672 `
+rabbitmq:3.8-management
+
+docker run -d --rm --net rabbits `
+-v ${PWD}/config/rabbit-2/:/config/ `
+-e RABBITMQ_CONFIG_FILE=/config/rabbitmq `
+-e RABBITMQ_ERLANG_COOKIE=WIWVHCDTCIUAWANLMQAW `
+--hostname rabbit-2 `
+--name rabbit-2 `
+-p 8082:15672 `
+rabbitmq:3.8-management
+
+docker run -d --rm --net rabbits `
+-v ${PWD}/config/rabbit-3/:/config/ `
+-e RABBITMQ_CONFIG_FILE=/config/rabbitmq `
+-e RABBITMQ_ERLANG_COOKIE=WIWVHCDTCIUAWANLMQAW `
+--hostname rabbit-3 `
+--name rabbit-3 `
+-p 8083:15672 `
+rabbitmq:3.8-management
+
+#NODE 1 : MANAGEMENT http://localhost:8081
+#NODE 2 : MANAGEMENT http://localhost:8082
+#NODE 3 : MANAGEMENT http://localhost:8083
+
+.............................................................................................
+In order to automate, remove  any container
+
+$docker rm -f rabbit-3
+
+Watch Management console or cluster status command
+
+Start the Container again and see how the node joins with cluster automatically
+
+docker run -d --rm --net rabbits `
+-v ${PWD}/config/rabbit-3/:/config/ `
+-e RABBITMQ_CONFIG_FILE=/config/rabbitmq `
+-e RABBITMQ_ERLANG_COOKIE=WIWVHCDTCIUAWANLMQAW `
+--hostname rabbit-3 `
+--name rabbit-3 `
+-p 8083:15672 `
+rabbitmq:3.8-management
+
+Have look at management console
+..............................................................................................
+				  Queue Mirroring
+..............................................................................................
+
+Why clustering?
+
+In RabbitMQ , We store messages in queues.
+If nodes goes down, queues not able to support for clients.
+Thats what we need many nodes, we have to replicate queues across the nodes
+
+Mirroring means replicating , which means keeping the same copy of the queue across the nodes.
+
+Each mirrored queues consist of one leader replica and one or more mirrors(replicas).The leader is hosted on one node commonly referred as the leader node for that queue. Each queue has its own leader.
+
+How Mirroring is configured.
+ Mirroring parameters are configured using policies
+
+
+What is policy?
+
+ Policy is set of rules to add features to the queues.
+
+Policy is set via regular expressions
+
+A Policy matches one or more queues by name(using regx pattern) and contains a definition that ared added to the toltatal set of properties of the matches.
+
+Policies:
+
+High Availablity feature via policy:
+
+rabbitmqctl set_policy      ha-all       "^ha\." '{"ha-mode":"all"}'
+               |              |            |
+            policy set     policyName     regex
+ 
+
+rabbitmqctl set_policy ha-two "^two\." \
+   '{"ha-mode":"exactly","ha-params":2,"ha-sync-mode":"automatic"}'
+
+In order enable mirroring , we need to enable plugin
+
+ rabbitmq_federation plugin
+
+docker exec -it rabbit-1 rabbitmq-plugins enable rabbitmq_federation 
+docker exec -it rabbit-2 rabbitmq-plugins enable rabbitmq_federation
+docker exec -it rabbit-3 rabbitmq-plugins enable rabbitmq_federation
+
+Set policy via rabbitmq ctl:
+
+
+rabbitmqctl set_policy ha-fed \
+    ".*" '{"federation-upstream-set":"all", "ha-mode":"nodes", "ha-params":["rabbit@rabbit-1","rabbit@rabbit-2","rabbit@rabbit-3"]}' \
+    --priority 1 \
+    --apply-to queues
+
+Create queues in any one of the node and see how mirroring happens.
+.............................................................................................
+
+Automatic fail overs:
+.....................
+
+docker rm -f rabbit-1
+
+see how management console works...
+.............................................................................................
+
+Quorum Queues :
+
+ Why and When
+
+ - {Data Safety + High Availability} 
+
+Classic Queues
+   
+  -{Less data Safety + High Availablity}
+
+ During network partion - during master and slave promotion in case of node failures, there is possibility of data loss.
+
+............................................................................................
+
+Shovel Plugin:
+ 
+To setup WAN wide cluster.
+ Replicating across the regions
+..................................................................................................
 
 
 
@@ -3243,33 +4201,6 @@ Steps :
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
 
 
 

@@ -1,0 +1,112 @@
+Tasks Queue Using python-Celery framework
+
+-python
+-pip
+
+
+install celery,ampq,redis modules
+
+pip install celery
+pip install amqp
+pip install redis 
+pip install eventlet
+
+start redis,rabbitmq - use docker 
+
+create project: task
+
+tasks.py
+from celery import Celery
+from time import sleep
+
+app = Celery('tasks', backend='redis://localhost', broker='amqp://guest:guest@localhost:5672/')
+
+@app.task 
+def reverse(text):
+    sleep(5)
+    return text[::-1]
+
+.....
+
+current project
+
+C:\session\tata\rabbitmq\CeleryTasks> celery -A tasks worker --loglevel=INFO -P eventlet
+
+-------------- celery@LAPTOP-R2TGGFDL v5.1.2 (sun-harmonics)
+--- ***** -----
+-- ******* ---- Windows-10-10.0.19042-SP0 2021-07-16 12:37:57
+- *** --- * ---
+- ** ---------- [config]
+- ** ---------- .> app:         tasks:0x1f0fbfc7220
+- ** ---------- .> transport:   amqp://guest:**@localhost:5672//
+- ** ---------- .> results:     redis://localhost/
+- *** --- * --- .> concurrency: 12 (eventlet)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** -----
+ -------------- [queues]
+                .> celery           exchange=celery(direct) key=celery
+
+
+[tasks]
+  . tasks.reverse
+
+[2021-07-16 12:37:57,401: INFO/MainProcess] Connected to amqp://guest:**@127.0.0.1:5672//
+[2021-07-16 12:37:57,409: INFO/MainProcess] mingle: searching for neighbors
+[2021-07-16 12:37:58,462: INFO/MainProcess] mingle: all alone
+[2021-07-16 12:37:58,479: INFO/MainProcess] celery@LAPTOP-R2TGGFDL ready.
+
+
+Sending tasks:
+
+S C:\session\tata\rabbitmq\CeleryTasks> py
+Python 3.9.5 (tags/v3.9.5:0a7dcbd, May  3 2021, 17:27:52) [MSC v.1928 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>> from tasks import reverse
+>>> result = reverse.delay('hello')
+>>> result
+<AsyncResult: dc2f6be0-74cb-47b8-b999-666ed25e921f>
+>>> result.status
+'SUCCESS'
+>>> result.get()
+'olleh'
+>>> result = reverse.delay('hello')
+>>> result
+<AsyncResult: 06cc004c-071c-44d9-9fe5-c8b82a9cbb49>
+>>> result.status
+'PENDING'
+>>> result.get()
+'olleh'
+>>> result
+<AsyncResult: 06cc004c-071c-44d9-9fe5-c8b82a9cbb49>
+>>> result.status
+'SUCCESS'
+>>> result = reverse.delay('hello')
+>>> result
+<AsyncResult: 74317f3c-cc72-4205-881a-7cf57db2023e>
+>>> result.status
+'SUCCESS'
+>>> result = reverse.delay('hello')
+>>> result = reverse.delay('hello')
+>>> result = reverse.delay('suburamanian')
+
+Check results in redis
+
+root@3fd493ef2d15:/data# redis-cli
+127.0.0.1:6379> keys *
+ 1) "celery-task-meta-faf8a861-a28a-4a5f-a803-0475578d8347"
+ 2) "celery-task-meta-ae768ff7-ff49-4fe4-9d89-b248b39780ad"
+ 3) "celery-task-meta-dc2f6be0-74cb-47b8-b999-666ed25e921f"
+ 4) "celery-task-meta-5253e658-5d17-4545-b2e3-5db746f3650c"
+ 5) "celery-task-meta-06cc004c-071c-44d9-9fe5-c8b82a9cbb49"
+ 6) "celery-task-meta-0222b9ee-83e3-4853-b11b-05b6db64c58c"
+ 7) "celery-task-meta-ec602328-b31d-469b-ad4b-17af5d70592d"
+ 8) "celery-task-meta-bbc83bc4-eb14-49a9-a20e-14a031317fd0"
+ 9) "celery-task-meta-8b1958b5-b0b7-4f76-878a-c45a301bf98e"
+10) "celery-task-meta-74317f3c-cc72-4205-881a-7cf57db2023e"
+11) "celery-task-meta-97bc2e0e-e7f2-4cfa-ac7d-bae53234beaf"
+12) "celery-task-meta-09ca8ed7-a706-489e-abf0-3e57dd93d681"
+13) "celery-task-meta-0235d181-7f40-4836-afcb-4950af7f009e"
+
+127.0.0.1:6379> get celery-task-meta-89acd7d0-1c7e-45fc-9b8e-6bbe27ae449a
+"{\"status\": \"SUCCESS\", \"result\": \"nainamarubus\", \"traceback\": null, \"children\": [], \"date_done\": \"2021-07-16T07:09:20.088612\", \"task_id\": \"89acd7d0-1c7e-45fc-9b8e-6bbe27ae449a\"}"
+127.0.0.1:6379>
